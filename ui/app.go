@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,15 +61,37 @@ type App struct {
 	showImport bool
 	importText string
 	importMsg  string
+
+	// 接口调试面板
+	showDebug     bool
+	debugMethod   string
+	debugURL      string
+	debugHeaders  string // 每行 key: value
+	debugQuery    string // 每行 key: value
+	debugBody     string
+	debugAuthType string
+	debugAuthToken string
+	debugUser     string
+	debugPass     string
+	debugTimeout  string
+	debugInsecure bool
+	debugView     int // 0=美化响应 1=响应头 2=Cookie 3=cURL
+	debugResult   *engine.DebugResult
+	debugSending  bool
+	splitDebug    float32
 }
 
 // Run 启动 GUI。
 func Run() {
 	app := &App{
-		scenario:     demoScenario(),
-		selectedStep: -1,
-		splitSide:    280,
-		splitLog:     220,
+		scenario:      demoScenario(),
+		selectedStep:  -1,
+		splitSide:     280,
+		splitLog:      220,
+		splitDebug:    360,
+		debugMethod:   "GET",
+		debugAuthType: "none",
+		debugTimeout:  "30",
 	}
 	app.logs = append(app.logs, "就绪。打开或新建场景，配置步骤后点击【一键运行】。")
 	mygo.App.WhenReady(func() {
@@ -91,7 +114,11 @@ func (a *App) view(c *ui.Context) {
 		a.toolbar(c, t)
 		ui.Divider(c)
 		ui.Split(c, &a.splitSide, func() { a.sidebar(c, t) }, func() {
-			ui.SplitVertical(c, &a.splitLog, func() { a.editor(c, t) }, func() { a.console(c, t) }).Fill()
+			if a.showDebug {
+				a.debugPanel(c, t)
+			} else {
+				ui.SplitVertical(c, &a.splitLog, func() { a.editor(c, t) }, func() { a.console(c, t) }).Fill()
+			}
 		}).Grow(1)
 		a.statusBar(c, t)
 	})
@@ -116,6 +143,13 @@ func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
 		if ui.Button(c, "⇥ 导入 cURL").Clicked() {
 			a.showImport = !a.showImport
 			a.importMsg = ""
+		}
+		debugLabel := "⚡ 接口调试"
+		if a.showDebug {
+			debugLabel = "⚡ 返回编排"
+		}
+		if ui.Button(c, debugLabel).Clicked() {
+			a.showDebug = !a.showDebug
 		}
 		if ui.PrimaryButton(c, "▶ 一键运行").Disabled(a.running).Clicked() {
 			a.run()
@@ -340,6 +374,195 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 	})
 }
 
+// debugPanel 接口调试面板：上半请求配置，下半响应展示。
+func (a *App) debugPanel(c *ui.Context, t *ui.Theme) {
+	ui.SplitVertical(c, &a.splitDebug, func() {
+		a.debugRequestArea(c, t)
+	}, func() {
+		a.debugResponseArea(c, t)
+	}).Fill()
+}
+
+// debugRequestArea 请求配置区：配置项可滚动，操作栏固定在底部。
+func (a *App) debugRequestArea(c *ui.Context, t *ui.Theme) {
+	ui.Column(c).Fill().Children(func() {
+		ui.Scroll(c).Grow(1).Padding(12, 14, 6, 14).Gap(9).Children(func() {
+			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "⚡ 接口调试").FontSize(14).Bold()
+				ui.Text(c, "单独发送请求并查看响应，无需运行整个场景").FontSize(10).TextColor(t.TextMuted)
+				ui.Spacer(c)
+				if a.debugResult != nil && a.debugResult.Curl != "" {
+					if ui.Button(c, "⇥  cURL 导入").Clicked() {
+						a.importText = a.debugResult.Curl
+						a.showImport = true
+						a.showDebug = false
+					}
+				}
+			})
+
+			ui.Row(c).Gap(8).Children(func() {
+				methods := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}
+				ui.Select(c, &a.debugMethod, methods).Width(100)
+				ui.TextInput(c, &a.debugURL).Placeholder("{{baseUrl}}/path 或完整 URL").Grow(1)
+			})
+
+			ui.Text(c, "请求头 Headers（每行 key: value，支持 {{变量}}）").FontSize(10).TextColor(t.TextMuted)
+			ui.TextArea(c, &a.debugHeaders).Height(56)
+			ui.Text(c, "查询参数 Query（每行 key: value）").FontSize(10).TextColor(t.TextMuted)
+			ui.TextArea(c, &a.debugQuery).Height(56)
+			ui.Text(c, "请求体 Body（支持 {{变量}}）").FontSize(10).TextColor(t.TextMuted)
+			ui.TextArea(c, &a.debugBody).Height(72)
+
+			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "认证").FontSize(11).Bold()
+				authTypes := []string{"none", "bearer", "basic"}
+				ui.Select(c, &a.debugAuthType, authTypes).Width(90)
+				if a.debugAuthType == "bearer" {
+					ui.TextInput(c, &a.debugAuthToken).Placeholder("{{token}}").Grow(1)
+				} else if a.debugAuthType == "basic" {
+					ui.TextInput(c, &a.debugUser).Placeholder("用户名").Width(120)
+					ui.TextInput(c, &a.debugPass).Password().Placeholder("密码").Width(120)
+				}
+			})
+		})
+		ui.Row(c).Gap(10).Padding(8, 14).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "超时(秒)").FontSize(11)
+			ui.TextInput(c, &a.debugTimeout).Width(70)
+			ui.Checkbox(c, &a.debugInsecure, "跳过 TLS 校验")
+			ui.Spacer(c)
+			if ui.Button(c, "清空").Clicked() {
+				a.debugResult = nil
+			}
+			if ui.PrimaryButton(c, "▶ 发送").Disabled(a.debugSending).Clicked() {
+				a.doDebugSend()
+			}
+		})
+	})
+}
+
+// debugResponseArea 响应展示区：概览 + 分段视图。
+func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
+	ui.Column(c).Fill().Children(func() {
+		ui.Row(c).Padding(8, 12).Gap(10).AlignItems(ui.Center).Children(func() {
+			ui.Segmented(c, &a.debugView, "响应体", "响应头", "Cookie", "cURL")
+			ui.Spacer(c)
+			if a.debugSending {
+				ui.Text(c, "发送中…").FontSize(11).TextColor(t.Accent)
+			} else if a.debugResult != nil {
+				res := a.debugResult
+				if res.OK {
+					statusColor := t.Accent
+					if res.StatusCode >= 400 {
+						statusColor = t.Danger
+					}
+					ui.Text(c, fmt.Sprintf("● %d %s", res.StatusCode, res.StatusText)).FontSize(11).Bold().TextColor(statusColor)
+					ui.Text(c, fmt.Sprintf("%d ms", res.DurationMS)).FontSize(11).TextColor(t.TextMuted)
+					ui.Text(c, fmt.Sprintf("%d B", res.Size)).FontSize(11).TextColor(t.TextMuted)
+				} else {
+					ui.Text(c, "✗ 请求失败").FontSize(11).Bold().TextColor(t.Danger)
+				}
+			}
+		})
+		ui.Scroll(c).Grow(1).Padding(0, 12, 10, 12).Children(func() {
+			if a.debugSending || a.debugResult == nil {
+				ui.Text(c, "配置好请求后点击【发送】，响应将显示在这里。").FontSize(11).TextColor(t.TextMuted)
+				return
+			}
+			res := a.debugResult
+			if !res.OK {
+				ui.Text(c, "错误: "+res.Err).FontSize(11).TextColor(t.Danger)
+				return
+			}
+			switch a.debugView {
+			case 1: // 响应头
+				if len(res.Headers) == 0 {
+					ui.Text(c, "（无响应头）").FontSize(11).TextColor(t.TextMuted)
+				}
+				for _, kv := range res.Headers {
+					ui.Row(c).Gap(8).Children(func() {
+						ui.Text(c, kv.Key+":").FontSize(11).Bold().Width(180)
+						ui.Text(c, kv.Value).FontSize(11)
+					})
+				}
+			case 2: // Cookie
+				if len(res.Cookies) == 0 {
+					ui.Text(c, "（无 Cookie）").FontSize(11).TextColor(t.TextMuted)
+				}
+				for _, kv := range res.Cookies {
+					ui.Text(c, kv.Key+" = "+kv.Value).FontSize(11)
+				}
+			case 3: // cURL
+				ui.Text(c, res.Curl).FontSize(11)
+			default: // 响应体
+				ui.Text(c, res.Formatted).FontSize(11)
+			}
+		})
+	})
+}
+
+// doDebugSend 异步发送调试请求，避免阻塞 UI 线程。
+func (a *App) doDebugSend() {
+	if strings.TrimSpace(a.debugURL) == "" {
+		a.debugResult = &engine.DebugResult{OK: false, Err: "URL 不能为空"}
+		return
+	}
+	timeout, _ := strconv.Atoi(strings.TrimSpace(a.debugTimeout))
+	vars := map[string]string{"baseUrl": a.scenario.BaseURL}
+	for k, v := range a.scenario.Variables {
+		vars[k] = v
+	}
+	req := engine.DebugRequest{
+		Method:      a.debugMethod,
+		URL:         a.debugURL,
+		Headers:     stringToMap(a.debugHeaders, ":"),
+		Query:       stringToMap(a.debugQuery, ":"),
+		Body:        a.debugBody,
+		AuthType:    a.debugAuthType,
+		AuthToken:   a.debugAuthToken,
+		AuthUser:    a.debugUser,
+		AuthPass:    a.debugPass,
+		TimeoutSec:  timeout,
+		InsecureTLS: a.debugInsecure,
+	}
+	a.debugSending = true
+	a.debugResult = nil
+	go func() {
+		res := engine.Debug(req, vars)
+		mygo.RunOnMain(func() {
+			a.debugSending = false
+			a.debugResult = res
+			if res.OK {
+				a.log(fmt.Sprintf("[调试] %s %s → %d (%d ms)", res.Method, previewURL(res.URL), res.StatusCode, res.DurationMS))
+			} else {
+				a.log("[调试] 失败: " + res.Err)
+			}
+		})
+	}()
+}
+
+// debugStep 把某个 request 步骤载入调试面板并发送。
+func (a *App) debugStep(step *model.Step) {
+	a.debugMethod = step.Method
+	if a.debugMethod == "" {
+		a.debugMethod = "GET"
+	}
+	a.debugURL = step.URL
+	a.debugHeaders = mapToString(step.Headers)
+	a.debugQuery = mapToString(step.Query)
+	a.debugBody = step.Body
+	a.debugAuthType = step.AuthType
+	if a.debugAuthType == "" {
+		a.debugAuthType = "none"
+	}
+	a.debugAuthToken = step.AuthToken
+	a.debugUser = step.AuthUser
+	a.debugPass = step.AuthPass
+	a.showDebug = true
+	a.debugResult = nil
+	a.debugView = 0
+	a.doDebugSend()
+}
+
 // importPanel 展示 cURL 粘贴与解析界面。
 func (a *App) importPanel(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Fill().Children(func() {
@@ -427,6 +650,13 @@ func (a *App) editorRequest(c *ui.Context, t *ui.Theme, step *model.Step) {
 	}
 	ui.Text(c, "请求体 Body（支持 {{变量}}）").FontSize(10).TextColor(t.TextMuted)
 	ui.TextArea(c, &step.Body).Height(100)
+
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		if ui.Button(c, "⚡ 试发送此请求").Clicked() {
+			a.debugStep(step)
+		}
+		ui.Text(c, "用当前步骤配置单独发起调试，不影响场景").FontSize(10).TextColor(t.TextMuted)
+	})
 
 	ui.Divider(c)
 	ui.Text(c, "认证").FontSize(12).Bold()

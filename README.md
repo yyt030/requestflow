@@ -12,6 +12,7 @@
 - **内置处理 + 自定义脚本**：常用处理逻辑内置；复杂逻辑用 JavaScript（goja）直接处理响应。
 - **多格式导出**：xlsx / csv / txt / json。
 - **从 Chrome 一键导入 cURL**：DevTools 中右键请求 → Copy as cURL，粘贴后一键解析成请求步骤，自动识别 Bearer Token、Cookie、查询参数与请求体，支持 bash / cmd / PowerShell 三种格式。
+- **接口调试**：工具栏「⚡ 接口调试」打开独立调试面板，单独发送请求即时查看响应，无需运行整个场景。支持 method/url/headers/query/body/认证/超时/TLS；响应区分「响应体 / 响应头 / Cookie / cURL」四视图，JSON 自动美化，显示状态码、耗时、字节数。request 步骤编辑器里还有「⚡ 试发送此请求」按钮，用当前步骤配置（含 `{{变量}}` 渲染）直接调试；调试响应可一键反向生成 cURL 并导回场景。
 - **类似自动化测试**：每步可配断言（状态码 / JSONPath / 文本包含 / 变量比较），失败即中止，也可设「失败后继续」。
 - **无界面模式**：`requestflow -run scenario.json` 便于 CI / 命令行跑批。
 
@@ -73,6 +74,8 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 7. 「保存」把场景导出为 JSON，可复用或纳入版本管理。
 
 **不想手工配请求？** 点工具栏「⇥ 导入 cURL」：在 Chrome 开发者工具 Network 面板右键目标请求 → **Copy → Copy as cURL**，粘贴到面板里点「解析并添加为步骤」。URL、方法、请求头、Cookie、查询参数、请求体自动填好；若请求 URL 以顶部 Base URL 开头，会自动替换成 `{{baseUrl}}` 便于环境切换。
+
+**只想调试单个接口？** 点工具栏「⚡ 接口调试」打开调试面板：上半区配置请求（方法 / URL / Headers / Query / Body / 认证 / 超时 / TLS），点「▶ 发送」；下半区即时查看响应，四个标签页分别是**响应体**（JSON 自动美化）、**响应头**、**Cookie**、**cURL**（当前请求反向生成的命令，可一键「⇥ cURL 导入」导回场景）。URL、Header、Body 都支持 `{{变量}}`，自动套用场景全局变量与 Base URL。如果在编排模式下想快速验证某个 request 步骤，可直接在步骤编辑器点「⚡ 试发送此请求」，会自动载入该步骤配置并发起调试。
 
 ## 场景 JSON 格式
 
@@ -202,7 +205,7 @@ go test ./...       # 全部包（engine / ui / version）
 ```
 main.go            入口（GUI / -run 无界面 / -version）
 model/model.go     数据模型
-engine/            执行引擎 + cURL 解析器 + 单元测试
+engine/            执行引擎 + cURL 解析器 + 接口调试 + 单元测试
 ui/app.go          mygo 原生界面
 version/version.go 版本信息（构建期注入）+ 单元测试
 build.sh           自动注入版本号的构建脚本
