@@ -1,0 +1,115 @@
+{
+  "name": "示例：switch 多分支 + 并行结果汇合",
+  "baseUrl": "https://httpbin.org",
+  "variables": {
+    "score": "85"
+  },
+  "steps": [
+    {
+      "id": "1",
+      "name": "switch 按分数评级",
+      "type": "switch",
+      "enabled": true,
+      "switch": {
+        "cases": [
+          {
+            "name": "优秀",
+            "logic": "and",
+            "conditions": [
+              { "var": "score", "op": "大于等于", "value": "80" }
+            ],
+            "steps": [
+              {
+                "id": "1a",
+                "name": "评级 A",
+                "type": "script",
+                "enabled": true,
+                "code": "vars.grade = 'A';"
+              }
+            ]
+          },
+          {
+            "name": "及格",
+            "logic": "and",
+            "conditions": [
+              { "var": "score", "op": "大于等于", "value": "60" }
+            ],
+            "steps": [
+              {
+                "id": "1b",
+                "name": "评级 B",
+                "type": "script",
+                "enabled": true,
+                "code": "vars.grade = 'B';"
+              }
+            ]
+          }
+        ],
+        "default": [
+          {
+            "id": "1d",
+            "name": "评级 C",
+            "type": "script",
+            "enabled": true,
+            "code": "vars.grade = 'C';"
+          }
+        ]
+      }
+    },
+    {
+      "id": "2",
+      "name": "并行拉取多来源并汇合成表",
+      "type": "parallel",
+      "enabled": true,
+      "parallel": {
+        "mode": "table",
+        "var": "allRows",
+        "tasks": [
+          {
+            "name": "来源一",
+            "var": "rows",
+            "steps": [
+              {
+                "id": "2a",
+                "name": "拉来源一",
+                "type": "request",
+                "enabled": true,
+                "method": "GET",
+                "url": "/get?src=1",
+                "extract": [
+                  { "name": "rows", "source": "body", "kind": "jsonpath", "path": "args.src" }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "来源二",
+            "var": "rows",
+            "steps": [
+              {
+                "id": "2b",
+                "name": "拉来源二",
+                "type": "request",
+                "enabled": true,
+                "method": "GET",
+                "url": "/get?src=2",
+                "extract": [
+                  { "name": "rows", "source": "body", "kind": "jsonpath", "path": "args.src" }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "3",
+      "name": "导出汇总结果",
+      "type": "export",
+      "enabled": true,
+      "from": "allRows",
+      "format": "txt",
+      "path": "result-components.txt"
+    }
+  ]
+}

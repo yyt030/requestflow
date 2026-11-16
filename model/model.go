@@ -23,13 +23,15 @@ func NewScenario(name string) *Scenario {
 type StepType string
 
 const (
-	StepRequest StepType = "request" // 发送 HTTP 请求，可提取变量、断言
-	StepLoop    StepType = "loop"    // 循环执行子步骤，用于翻页/遍历
-	StepBranch  StepType = "branch"  // 条件分支：when 成立执行 then，否则执行 else
-	StepProcess StepType = "process" // 内置数据处理
-	StepScript  StepType = "script"  // 自定义 JavaScript 处理响应
-	StepExport  StepType = "export"  // 导出到 Excel / 文本 / JSON
-	StepAssert  StepType = "assert"  // 独立断言
+	StepRequest  StepType = "request"  // 发送 HTTP 请求，可提取变量、断言
+	StepLoop     StepType = "loop"     // 循环执行子步骤，用于翻页/遍历
+	StepBranch   StepType = "branch"   // 条件分支：when 成立执行 then，否则执行 else
+	StepSwitch   StepType = "switch"   // 多分支：自上而下匹配第一个 case，否则 default
+	StepParallel StepType = "parallel" // 并行结果汇合：多个子任务并行执行后汇合产物
+	StepProcess  StepType = "process"  // 内置数据处理
+	StepScript   StepType = "script"   // 自定义 JavaScript 处理响应
+	StepExport   StepType = "export"   // 导出到 Excel / 文本 / JSON
+	StepAssert   StepType = "assert"   // 独立断言
 )
 
 // Step 单个执行步骤。字段按类型取用，未使用的字段留空即可。
@@ -59,6 +61,12 @@ type Step struct {
 
 	// --- branch 字段 ---
 	Branch *Branch `json:"branch,omitempty"`
+
+	// --- switch 字段 ---
+	Switch *Switch `json:"switch,omitempty"`
+
+	// --- parallel 字段 ---
+	Parallel *Parallel `json:"parallel,omitempty"`
 
 	// --- process 字段 ---
 	Op   string            `json:"op,omitempty"`
@@ -129,6 +137,44 @@ type Branch struct {
 	When       string      `json:"when,omitempty"` // 高级：原始表达式，如 {{amount}} > 0
 	Then       []Step      `json:"then,omitempty"` // 条件成立时执行的子步骤
 	Else       []Step      `json:"else,omitempty"` // 条件不成立时执行的子步骤
+}
+
+// SwitchCase switch 的单个分支：条件成立时执行 Steps，然后跳出整个 switch。
+type SwitchCase struct {
+	Name       string      `json:"name,omitempty"`       // 分支名称，便于 UI 展示与日志
+	Logic      string      `json:"logic,omitempty"`      // and | or，默认 and
+	Conditions []Condition `json:"conditions,omitempty"` // 结构化条件
+	When       string      `json:"when,omitempty"`       // 高级原始表达式，非空时优先于 Conditions
+	Steps      []Step      `json:"steps,omitempty"`      // 命中后执行的子步骤
+}
+
+// Switch 多分支配置：自上而下依次求值 Cases，命中第一个即执行其 Steps 并结束；
+// 全部未命中时执行 Default。
+type Switch struct {
+	Cases   []SwitchCase `json:"cases,omitempty"`
+	Default []Step       `json:"default,omitempty"` // 兜底分支（可选）
+}
+
+// ParallelTask 并行汇合中的一个子任务。
+// 子任务在自己的变量沙箱中执行，完成后按 Var/Value 产出一个结果供汇合。
+type ParallelTask struct {
+	Name  string `json:"name,omitempty"`  // 任务名，object 模式下作为 key
+	Steps []Step `json:"steps,omitempty"` // 任务内执行的子步骤
+	Var   string `json:"var,omitempty"`   // 从子任务变量中取该变量作为产物；为空则取整批变量快照
+	Value string `json:"value,omitempty"` // 直接产出常量值（渲染后），优先于 Var
+}
+
+// Parallel 并行结果汇合配置：所有 Tasks 并发执行，全部完成后按 Mode 汇合到 Target 变量。
+//   - array:  各任务产物顺序拼成数组
+//   - object: 以任务名为 key 组成对象
+//   - table:  各任务产物须为数组/可转数组，合并为一张表格行数组
+//   - concat: 各任务产物转为字符串后拼接（可用 Separator 分隔）
+type Parallel struct {
+	Tasks     []ParallelTask `json:"tasks,omitempty"`
+	Var       string         `json:"var,omitempty"`       // 汇合结果写入的变量名
+	Mode      string         `json:"mode,omitempty"`      // array | object | table | concat
+	Separator string         `json:"separator,omitempty"` // concat 模式的拼接分隔符
+	FailFast  bool           `json:"failFast,omitempty"`  // 子任务失败时是否立即失败（默认忽略并继续）
 }
 
 // Response 封装一次 HTTP 响应的结果，供提取、断言、脚本、导出使用。

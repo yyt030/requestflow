@@ -266,10 +266,12 @@ func (a *App) addMenu(c *ui.Context, t *ui.Theme) {
 			label string
 			typ   model.StepType
 		}{
-			{"HTTP 请求", model.StepRequest},
-			{"条件分支", model.StepBranch},
-			{"循环 / 翻页", model.StepLoop},
-			{"内置处理", model.StepProcess},
+		{"HTTP 请求", model.StepRequest},
+		{"条件分支", model.StepBranch},
+		{"多分支 switch", model.StepSwitch},
+		{"循环 / 翻页", model.StepLoop},
+		{"并行结果汇合", model.StepParallel},
+		{"内置处理", model.StepProcess},
 			{"自定义脚本", model.StepScript},
 			{"独立断言", model.StepAssert},
 			{"导出结果", model.StepExport},
@@ -319,7 +321,8 @@ func (a *App) stepList(c *ui.Context, t *ui.Theme) {
 
 func (a *App) stepLabel(s model.Step) string {
 	icon := map[model.StepType]string{
-		model.StepRequest: "⇄", model.StepLoop: "↻", model.StepBranch: "分", model.StepProcess: "⚙",
+		model.StepRequest: "⇄", model.StepLoop: "↻", model.StepBranch: "分", model.StepSwitch: "选",
+		model.StepParallel: "并", model.StepProcess: "⚙",
 		model.StepScript: "JS", model.StepAssert: "✓", model.StepExport: "⇩",
 	}[s.Type]
 	name := s.Name
@@ -364,6 +367,10 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 				a.editorLoop(c, t, step)
 			case model.StepBranch:
 				a.editorBranch(c, t, step)
+			case model.StepSwitch:
+				a.editorSwitch(c, t, step)
+			case model.StepParallel:
+				a.editorParallel(c, t, step)
 			case model.StepProcess:
 				a.editorProcess(c, t, step)
 			case model.StepScript:
@@ -860,6 +867,123 @@ func (a *App) editorBranchChildren(c *ui.Context, t *ui.Theme, step *model.Step,
 	}
 }
 
+// editorSwitch 多分支编辑器：多个 case 自上而下匹配，命中即执行；支持 default。
+func (a *App) editorSwitch(c *ui.Context, t *ui.Theme, step *model.Step) {
+	if step.Switch == nil {
+		step.Switch = &model.Switch{}
+	}
+	sw := step.Switch
+	ui.Text(c, "多分支：自上而下匹配，命中第一个 case 后执行并跳出；都不满足则执行 default").FontSize(10).TextColor(t.TextMuted)
+
+	ops := []string{"大于", "大于等于", "小于", "小于等于", "等于", "不等于", "包含", "不包含", "存在", "为空", "为真"}
+	for i := range sw.Cases {
+		cs := &sw.Cases[i]
+		idx := i
+		ui.Column(c.Key(fmt.Sprintf("switch-case-%d", idx))).Padding(10).Gap(6).Background(t.Surface).Radius(8).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, fmt.Sprintf("case %d", idx+1)).FontSize(11).Bold().TextColor(t.Accent)
+				ui.TextInput(c, &cs.Name).Placeholder("分支名称（可选）").Grow(1)
+				if ui.Button(c.Key("up"), "↑").Width(28).Disabled(idx == 0).Clicked() {
+					sw.Cases[idx], sw.Cases[idx-1] = sw.Cases[idx-1], sw.Cases[idx]
+				}
+				if ui.Button(c.Key("dn"), "↓").Width(28).Disabled(idx == len(sw.Cases)-1).Clicked() {
+					sw.Cases[idx], sw.Cases[idx+1] = sw.Cases[idx+1], sw.Cases[idx]
+				}
+				if ui.Button(c.Key("del"), "移除").Clicked() {
+					sw.Cases = append(sw.Cases[:idx], sw.Cases[idx+1:]...)
+				}
+			})
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				if cs.Logic == "" {
+					cs.Logic = "and"
+				}
+				ui.Select(c, &cs.Logic, []string{"and", "or"}).Width(80)
+				ui.Text(c, map[string]string{"and": "全部满足", "or": "任一满足"}[cs.Logic]).FontSize(10).TextColor(t.TextMuted)
+			})
+			for j := range cs.Conditions {
+				cond := &cs.Conditions[j]
+				ui.Row(c).Gap(6).Children(func() {
+					ui.TextInput(c, &cond.Var).Placeholder("变量名").Grow(1)
+					if cond.Op == "" {
+						cond.Op = "等于"
+					}
+					ui.Select(c, &cond.Op, ops).Width(90)
+					if cond.Op != "存在" && cond.Op != "为空" && cond.Op != "为真" {
+						ui.TextInput(c, &cond.Value).Placeholder("值").Width(90)
+					}
+				})
+			}
+			if ui.Button(c.Key("addcond"), "+ 条件").Clicked() {
+				cs.Conditions = append(cs.Conditions, model.Condition{Op: "等于"})
+			}
+			ui.Text(c, "高级表达式（留空则用上方条件）").FontSize(10).TextColor(t.TextMuted)
+			ui.TextInput(c, &cs.When).Placeholder("{{status}} == 200")
+			ui.Text(c, "命中后执行").FontSize(10).TextColor(t.TextMuted)
+			a.editorBranchChildren(c, t, step, &cs.Steps, fmt.Sprintf("sw%d", idx))
+		})
+	}
+	if ui.Button(c, "+ 添加 case").Clicked() {
+		sw.Cases = append(sw.Cases, model.SwitchCase{Name: fmt.Sprintf("case %d", len(sw.Cases)+1), Logic: "and"})
+	}
+	ui.Divider(c)
+	ui.Text(c, "default（都不命中时执行）").FontSize(11).Bold().TextColor(t.TextMuted)
+	a.editorBranchChildren(c, t, step, &sw.Default, "swdefault")
+}
+
+// editorParallel 并行结果汇合编辑器：配置多个并行子任务及其产物汇合方式。
+func (a *App) editorParallel(c *ui.Context, t *ui.Theme, step *model.Step) {
+	if step.Parallel == nil {
+		step.Parallel = &model.Parallel{Mode: "table", Var: "merged"}
+	}
+	p := step.Parallel
+	ui.Row(c).Gap(8).Children(func() {
+		ui.Select(c, &p.Mode, []string{"array", "object", "table", "concat"}).Label("汇合方式").Width(140)
+		ui.TextInput(c, &p.Var).Label("写入变量").Grow(1)
+	})
+	ui.Text(c, map[string]string{
+		"array": "array：各任务产物按顺序组成数组",
+		"object": "object：以任务名为 key 组成对象",
+		"table": "table：各任务产物（数组）展开合并成一张表，可直接导出",
+		"concat": "concat：各任务产物转为文本后拼接",
+	}[defaultModeStr(p.Mode)]).FontSize(10).TextColor(t.TextMuted)
+	if defaultModeStr(p.Mode) == "concat" {
+		ui.TextInput(c, &p.Separator).Label("分隔符")
+	}
+	ui.Checkbox(c, &p.FailFast, "任一子任务失败则整体失败（默认忽略失败并继续汇合）")
+
+	ui.Divider(c)
+	for i := range p.Tasks {
+		task := &p.Tasks[i]
+		idx := i
+		ui.Column(c.Key(fmt.Sprintf("parallel-task-%d", idx))).Padding(10).Gap(6).Background(t.Surface).Radius(8).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, fmt.Sprintf("任务 %d", idx+1)).FontSize(11).Bold().TextColor(t.Accent)
+				ui.TextInput(c, &task.Name).Placeholder("任务名（object 模式作为 key）").Grow(1)
+				if ui.Button(c.Key("del"), "移除").Clicked() {
+					p.Tasks = append(p.Tasks[:idx], p.Tasks[idx+1:]...)
+				}
+			})
+			ui.Row(c).Gap(8).Children(func() {
+				ui.TextInput(c, &task.Var).Placeholder("产物变量名（如 rows）").Grow(1)
+				ui.TextInput(c, &task.Value).Placeholder("或直接产出常量文本").Grow(1)
+			})
+			ui.Text(c, "子任务步骤（在独立变量沙箱中并行执行）").FontSize(10).TextColor(t.TextMuted)
+			a.editorBranchChildren(c, t, step, &task.Steps, fmt.Sprintf("pt%d", idx))
+		})
+	}
+	if ui.Button(c, "+ 添加子任务").Clicked() {
+		p.Tasks = append(p.Tasks, model.ParallelTask{Name: fmt.Sprintf("task %d", len(p.Tasks)+1)})
+	}
+}
+
+func defaultModeStr(mode string) string {
+	m := strings.ToLower(strings.TrimSpace(mode))
+	if m == "" {
+		return "array"
+	}
+	return m
+}
+
 func (a *App) editorLoop(c *ui.Context, t *ui.Theme, step *model.Step) {
 	if step.Loop == nil {
 		step.Loop = &model.Loop{Mode: "until", Max: 20, PageVar: "page", PageStart: 1, PageStep: 1}
@@ -1208,6 +1332,15 @@ func (a *App) appendStep(typ model.StepType) {
 		s.Loop = &model.Loop{Mode: "until", Max: 20, PageVar: "page", PageStart: 1, PageStep: 1}
 	case model.StepBranch:
 		s.Branch = &model.Branch{Logic: "and", Conditions: []model.Condition{{Op: "大于"}}}
+	case model.StepSwitch:
+		s.Switch = &model.Switch{
+			Cases: []model.SwitchCase{{Name: "case 1", Logic: "and", Conditions: []model.Condition{{Op: "等于"}}}},
+		}
+	case model.StepParallel:
+		s.Parallel = &model.Parallel{
+			Mode: "table", Var: "merged",
+			Tasks: []model.ParallelTask{{Name: "task 1"}},
+		}
 	case model.StepExport:
 		s.Format = "xlsx"
 		s.Path = "result.xlsx"
@@ -1402,6 +1535,10 @@ func defaultStepName(t model.StepType) string {
 		return "循环/翻页"
 	case model.StepBranch:
 		return "条件分支"
+	case model.StepSwitch:
+		return "多分支 switch"
+	case model.StepParallel:
+		return "并行结果汇合"
 	case model.StepProcess:
 		return "数据处理"
 	case model.StepScript:

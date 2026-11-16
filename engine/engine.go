@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"requestflow/model"
@@ -34,7 +36,14 @@ type Engine struct {
 	http     *HTTPClient
 	onEvent  func(Event)
 	lastResp *model.Response
-	stopFlag bool
+	stopFlag int32 // 原子访问，支持并行子任务安全读取
+
+	// emitMu 串行化事件回调。并行汇合的多个子任务共享同一个 onEvent，
+	// 加锁保证 UI/日志订阅方不会收到并发调用。
+	emitMu *sync.Mutex
+	// localCtx 标记该 Engine 是否使用外部注入的上下文（并行子任务为 true），
+	// 用于避免子任务污染父场景的变量命名空间。
+	localCtx bool
 }
 
 func NewEngine(sc *model.Scenario, onEvent func(Event)) *Engine {
@@ -44,12 +53,15 @@ func NewEngine(sc *model.Scenario, onEvent func(Event)) *Engine {
 		ctx:      NewContext(sc.Variables),
 		http:     NewHTTPClient(timeout, true),
 		onEvent:  onEvent,
+		emitMu:   &sync.Mutex{},
 	}
 }
 
 func (e *Engine) emit(typ, stepID, stepName, msg string) {
 	if e.onEvent != nil {
+		e.emitMu.Lock()
 		e.onEvent(Event{Type: typ, StepID: stepID, StepName: stepName, Message: msg, Time: time.Now()})
+		e.emitMu.Unlock()
 	}
 }
 
@@ -57,13 +69,16 @@ func (e *Engine) emit(typ, stepID, stepName, msg string) {
 func (e *Engine) Context() *Context { return e.ctx }
 
 // Stop 请求在当前步骤后停止。
-func (e *Engine) Stop() { e.stopFlag = true }
+func (e *Engine) Stop() { atomic.StoreInt32(&e.stopFlag, 1) }
+
+// stopped 安全读取停止标记。
+func (e *Engine) stopped() bool { return atomic.LoadInt32(&e.stopFlag) == 1 }
 
 // Run 按顺序执行整个场景。
 func (e *Engine) Run() *Result {
 	res := &Result{Scenario: e.scenario.Name, Started: time.Now()}
 	for _, step := range e.scenario.Steps {
-		if e.stopFlag {
+		if e.stopped() {
 			e.emit("log", "", "", "已请求停止")
 			break
 		}
@@ -97,6 +112,10 @@ func (e *Engine) runStep(step model.Step, depth int) error {
 		err = e.runLoop(step, depth)
 	case model.StepBranch:
 		err = e.runBranch(step, depth)
+	case model.StepSwitch:
+		err = e.runSwitch(step, depth)
+	case model.StepParallel:
+		err = e.runParallel(step, depth)
 	case model.StepProcess:
 		err = runProcess(e.ctx, step)
 		e.emit("log", step.ID, step.Name, fmt.Sprintf("内置处理: %s", step.Op))
@@ -318,7 +337,7 @@ func (e *Engine) runLoop(step model.Step, depth int) error {
 
 	page := lp.PageStart
 	for i := 0; i < max; i++ {
-		if e.stopFlag {
+		if e.stopped() {
 			break
 		}
 		// 设置循环变量

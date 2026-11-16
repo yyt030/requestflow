@@ -40,6 +40,22 @@ func (c *Context) Get(name string) interface{} {
 	return c.vars[name]
 }
 
+// Fork 复制当前上下文为一个独立沙箱，供并行子任务使用。
+// 子任务对变量的写入不会回传到父上下文；父上下文已有的变量对子任务可见。
+func (c *Context) Fork() *Context {
+	c.mu.RLock()
+	vars := make(map[string]interface{}, len(c.vars))
+	for k, v := range c.vars {
+		vars[k] = v
+	}
+	steps := make(map[string]interface{}, len(c.steps))
+	for k, v := range c.steps {
+		steps[k] = v
+	}
+	c.mu.RUnlock()
+	return &Context{vars: vars, steps: steps}
+}
+
 // SetStepResponse 记录某步骤名对应的响应对象（脚本可按步骤名引用）。
 func (c *Context) SetStepResponse(stepName string, view map[string]interface{}) {
 	c.mu.Lock()

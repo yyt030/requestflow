@@ -6,8 +6,10 @@
 
 - **可视化配置**：左侧步骤列表可勾选启用、上下排序、删除；**全局变量可视化编辑（增/改/删）**；中间按步骤类型显示表单。
 - **执行可视化**：底部三视图切换 —— **日志 / 结果表 / 变量**。结果表用原生表格展示提取的数组数据（可选数据源、列排序、刷新）；变量视图列出全部运行时变量。
-- **可配置顺序步骤**：`request / branch / loop / process / script / assert / export` 七种步骤自由编排。
+- **可配置顺序步骤**：`request / branch / switch / loop / parallel / process / script / assert / export` 九种步骤自由编排。
 - **条件分支（可视化配置）**：`branch` 步骤按条件走不同分支——**变量 + 操作符（大于/小于/等于/包含/为空…）+ 值** 下拉拼装，支持 and/or 组合与嵌套；条件成立执行 then、否则执行 else，各分支内可放请求/脚本/处理子步骤。也可切换高级模式直接写 `{{amount}} > 0` 表达式。
+- **多分支 switch**：`switch` 步骤配置多个 case，**自上而下匹配第一个满足的 case** 后执行其步骤并跳出，都不满足则走 default。case 条件与 branch 一致（and/or + 中文操作符 / 高级表达式），支持用 ↑/↓ 调整优先级。适合按状态码、等级、类型分发到不同处理流程。
+- **并行结果汇合**：`parallel` 步骤把多个子任务**并发执行**（各自独立变量沙箱、共享会话），全部完成后按 `array / object / table / concat` 方式把各任务产物汇合到一个变量，可直接交给后续步骤或导出。典型用法：并行拉取多个接口/多页数据 → `table` 模式汇成一张表 → 统一导出。任一任务失败默认忽略并继续，可勾选「失败即整体失败」。
 - **两种登录态**：Bearer Token 从响应提取到变量后用 `{{token}}` 注入；Cookie 会话由全局 CookieJar 自动跨步骤携带。
 - **循环翻页**：`count`（固定次数）、`foreach`（遍历数组）、`until`（翻到空数据自动停）三种模式，页码变量自动递增。
 - **内置处理 + 自定义脚本**：常用处理逻辑内置；复杂逻辑用 JavaScript（goja）直接处理响应。
@@ -101,6 +103,24 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 
 条件用界面下拉拼装（变量 + 操作符 + 值），支持 **and/or** 多个条件组合；操作符有大于/大于等于/小于/小于等于/等于/不等于/包含/不包含/存在/为空/为真，数值和字符串都能比。多条件用 and/or 组合即可（不必写 `&&`）；若偏好表达式，「高级」框支持单个比较如 `{{amount}} > 0` 或 `{{len(rows)}} == 0`（走 `Eval`）。分支可**嵌套**（分支的 then/else 里再放分支），也可放在 loop 循环体内。完整可运行示例见 `scenarios/branch-demo.json`。
 
+### 常用任务组合组件：switch 与并行汇合
+
+当分支多于两个（如按状态码 200/404/500 分流），用 `switch` 更清晰：界面里添加多个 case，每个 case 配条件与子步骤，用 **↑/↓** 调整优先级。执行时**自上而下匹配第一个满足的 case**，命中后执行它的步骤并跳出整个 switch；都不命中则执行 default。case 条件语法与 branch 完全相同（中文操作符 / and/or / 高级表达式）。
+
+`parallel` 把多个子任务**同时执行**，适合并行拉取多个接口或多页数据。每个子任务在自己的**变量沙箱**中跑（写变量互不污染、不回传父级，但共享登录会话），任务内用 `extract` 取数，并在任务上指定「产物变量名」（`var`）或「常量文本」（`value`）。全部完成后按 `mode` 汇合到目标变量：
+
+| mode | 汇合结果 |
+|---|---|
+| `array` | 各任务产物按顺序组成数组 |
+| `object` | 以任务名为 key 组成对象 |
+| `table` | 各任务产物（数组）展开合并成一张表，**可直接导出** |
+| `concat` | 各任务产物转为文本拼接（`separator` 指定分隔符） |
+
+> 例：并行拉取来源一、来源二，各提取一个值 → `table` 模式汇成 `allRows` → 后续 export 步骤统一导出。
+> 产物顺序按任务配置顺序固定，与实际完成先后无关；任一任务失败默认忽略并继续汇合，勾选 `failFast` 则整体失败。
+
+完整可运行示例见 `scenarios/components-demo.json`（switch 评级 + 并行拉取汇合导出）。
+
 ## 场景 JSON 格式
 
 ```jsonc
@@ -141,7 +161,7 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 }
 ```
 
-`scenarios/demo.json`（可直接跑，连 httpbin）和 `scenarios/pagination.json`（真实业务模板）是完整示例。
+`scenarios/demo.json`（可直接跑，连 httpbin）、`scenarios/pagination.json`（真实业务模板）、`scenarios/branch-demo.json`（条件分支）、`scenarios/components-demo.json`（switch + 并行汇合）是完整示例。
 
 ## 步骤类型
 
@@ -149,7 +169,9 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 |---|---|---|
 | `request` | 发 HTTP 请求 | `method` `url` `headers` `query` `body` `authType` `authToken` `extract` `assert` |
 | `branch` | 条件分支 | `branch`（`conditions`+`logic` 或 `when`；`then`/`else` 子步骤） |
+| `switch` | 多分支 | `switch.cases[]`（每个 case 有 `name` `conditions`+`logic` 或 `when` + `steps`）、`switch.default[]` |
 | `loop` | 循环子步骤（翻页） | `loop`（见下表）+ `children` |
+| `parallel` | 并行结果汇合 | `parallel.tasks[]`（`name` `steps` `var`/`value`）、`var` `mode` `separator` `failFast` |
 | `process` | 内置数据处理 | `op` + `args` |
 | `script` | 自定义 JS 处理 | `code` |
 | `assert` | 独立断言（针对最近响应） | `assert` |
