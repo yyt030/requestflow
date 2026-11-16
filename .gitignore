@@ -1,0 +1,25 @@
+# 编译产物
+/requestflow
+/flowhttp
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# 运行生成的结果文件
+result.txt
+result.xlsx
+*.xlsx
+*.csv
+
+# 测试与覆盖率
+*.test
+*.out
+coverage.txt
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

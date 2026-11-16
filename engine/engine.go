@@ -1,0 +1,263 @@
+package engine
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"requestflow/model"
+)
+
+// Event 执行过程中产生的事件，UI 订阅它实时显示日志与步骤状态。
+type Event struct {
+	Type    string // step-start | step-done | step-error | log | loop-iter | done
+	StepID  string
+	StepName string
+	Message string
+	Time    time.Time
+}
+
+// Result 单次执行的汇总结果。
+type Result struct {
+	Scenario string
+	OK       bool
+	Err      error
+	Vars     map[string]interface{}
+	Started  time.Time
+	Ended    time.Time
+}
+
+// Engine 场景执行引擎。
+type Engine struct {
+	scenario *model.Scenario
+	ctx      *Context
+	http     *HTTPClient
+	onEvent  func(Event)
+	lastResp *model.Response
+	stopFlag bool
+}
+
+func NewEngine(sc *model.Scenario, onEvent func(Event)) *Engine {
+	timeout := 30 * time.Second
+	return &Engine{
+		scenario: sc,
+		ctx:      NewContext(sc.Variables),
+		http:     NewHTTPClient(timeout, true),
+		onEvent:  onEvent,
+	}
+}
+
+func (e *Engine) emit(typ, stepID, stepName, msg string) {
+	if e.onEvent != nil {
+		e.onEvent(Event{Type: typ, StepID: stepID, StepName: stepName, Message: msg, Time: time.Now()})
+	}
+}
+
+// Context 暴露运行时上下文，便于运行后检查变量。
+func (e *Engine) Context() *Context { return e.ctx }
+
+// Stop 请求在当前步骤后停止。
+func (e *Engine) Stop() { e.stopFlag = true }
+
+// Run 按顺序执行整个场景。
+func (e *Engine) Run() *Result {
+	res := &Result{Scenario: e.scenario.Name, Started: time.Now()}
+	for _, step := range e.scenario.Steps {
+		if e.stopFlag {
+			e.emit("log", "", "", "已请求停止")
+			break
+		}
+		if !step.Enabled {
+			continue
+		}
+		if err := e.runStep(step, 0); err != nil {
+			res.Err = err
+			res.OK = false
+			e.emit("done", "", "", fmt.Sprintf("执行失败: %v", err))
+			break
+		}
+	}
+	res.Ended = time.Now()
+	res.Vars = e.ctx.Snapshot()
+	if res.Err == nil {
+		res.OK = true
+		e.emit("done", "", "", "执行完成")
+	}
+	return res
+}
+
+// runStep 执行单步，depth 为循环嵌套层级。
+func (e *Engine) runStep(step model.Step, depth int) error {
+	e.emit("step-start", step.ID, step.Name, "开始")
+	var err error
+	switch step.Type {
+	case model.StepRequest:
+		err = e.runRequest(step)
+	case model.StepLoop:
+		err = e.runLoop(step, depth)
+	case model.StepProcess:
+		err = runProcess(e.ctx, step)
+		e.emit("log", step.ID, step.Name, fmt.Sprintf("内置处理: %s", step.Op))
+	case model.StepScript:
+		err = runScript(e.ctx, step, e.lastResp)
+		e.emit("log", step.ID, step.Name, "自定义脚本已执行")
+	case model.StepExport:
+		var path string
+		path, err = runExport(e.ctx, e.ctx.Render(step.From), e.ctx.Render(step.Format), e.ctx.Render(step.Path))
+		if err == nil {
+			e.emit("log", step.ID, step.Name, "已导出: "+path)
+		}
+	case model.StepAssert:
+		err = applyAsserts(e.ctx, e.lastResp, step.Assert)
+	default:
+		err = fmt.Errorf("未知步骤类型: %s", step.Type)
+	}
+
+	if err != nil {
+		e.emit("step-error", step.ID, step.Name, err.Error())
+		if !step.ContinueOnFail {
+			return err
+		}
+		e.emit("log", step.ID, step.Name, "忽略错误并继续")
+		return nil
+	}
+	e.emit("step-done", step.ID, step.Name, "完成")
+	return nil
+}
+
+func (e *Engine) runRequest(step model.Step) error {
+	method := e.ctx.Render(step.Method)
+	rawURL := e.ctx.Render(step.URL)
+	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+		base := e.ctx.Render(e.scenario.BaseURL)
+		if base != "" {
+			rawURL = strings.TrimRight(base, "/") + "/" + strings.TrimLeft(rawURL, "/")
+		}
+	}
+	headers := e.ctx.RenderMap(step.Headers)
+	query := e.ctx.RenderMap(step.Query)
+	body := e.ctx.Render(step.Body)
+	authStep := model.Step{
+		AuthType:  e.ctx.Render(step.AuthType),
+		AuthToken: e.ctx.Render(step.AuthToken),
+		AuthUser:  e.ctx.Render(step.AuthUser),
+		AuthPass:  e.ctx.Render(step.AuthPass),
+	}
+
+	e.emit("log", step.ID, step.Name, fmt.Sprintf("%s %s", method, rawURL))
+	resp, err := e.http.Do(method, rawURL, headers, query, body, &authStep)
+	if err != nil {
+		return err
+	}
+	e.lastResp = resp
+	e.emit("log", step.ID, step.Name, fmt.Sprintf("响应 %d, %d 字节", resp.StatusCode, len(resp.Body)))
+
+	if err := applyExtracts(e.ctx, resp, step.Extract); err != nil {
+		return err
+	}
+	if err := applyAsserts(e.ctx, resp, step.Assert); err != nil {
+		return err
+	}
+	e.ctx.SetStepResponse(step.Name, responseView(resp))
+	return nil
+}
+
+// runLoop 实现循环翻页。三种模式：count / foreach / until。
+func (e *Engine) runLoop(step model.Step, depth int) error {
+	if step.Loop == nil {
+		return fmt.Errorf("loop 步骤缺少 loop 配置")
+	}
+	lp := step.Loop
+	max := lp.Max
+	if max <= 0 {
+		max = 100
+	}
+	mode := strings.ToLower(lp.Mode)
+	if mode == "" {
+		mode = "count"
+	}
+
+	// foreach 预先取数组长度
+	var items []interface{}
+	if mode == "foreach" {
+		var ok bool
+		items, ok = toSlice(e.ctx.Get(lp.ListVar))
+		if !ok {
+			return fmt.Errorf("foreach: 变量 %s 不是数组", lp.ListVar)
+		}
+		if max > len(items) {
+			max = len(items)
+		}
+	}
+
+	page := lp.PageStart
+	for i := 0; i < max; i++ {
+		if e.stopFlag {
+			break
+		}
+		// 设置循环变量
+		if lp.PageVar != "" {
+			e.ctx.Set(lp.PageVar, page)
+		}
+		switch mode {
+		case "foreach":
+			item := items[i]
+			if lp.ItemVar != "" {
+				e.ctx.Set(lp.ItemVar, item)
+			}
+			if lp.IndexVar != "" {
+				e.ctx.Set(lp.IndexVar, i)
+			}
+		}
+
+		e.emit("loop-iter", step.ID, step.Name, fmt.Sprintf("第 %d 轮 (page=%d)", i+1, page))
+
+		for _, child := range step.Children {
+			if !child.Enabled {
+				continue
+			}
+			if err := e.runStep(child, depth+1); err != nil {
+				return err
+			}
+		}
+
+		// until 模式：条件成立即退出（如 len(rows) == 0 表示翻到空页）
+		if mode == "until" && lp.BreakWhen != "" {
+			if e.evalBreak(lp.BreakWhen) {
+				e.emit("log", step.ID, step.Name, "满足终止条件，退出循环")
+				break
+			}
+		}
+		// count 模式：到达指定次数退出
+		if mode == "count" && lp.Count > 0 && i+1 >= lp.Count {
+			break
+		}
+		page += lp.PageStep
+		if lp.PageStep == 0 {
+			page = lp.PageStart + i + 1
+		}
+	}
+	return nil
+}
+
+// evalBreak 求值 until 的终止条件，支持 "{{len(rows)}} == 0" 与内置函数。
+func (e *Engine) evalBreak(expr string) bool {
+	rendered := e.ctx.Render(expr)
+	// 已完全渲染为布尔字面量
+	switch strings.TrimSpace(rendered) {
+	case "true":
+		return true
+	case "false":
+		return false
+	}
+	// 直接交给表达式求值器
+	v := e.ctx.Eval(expr)
+	b, _ := toFloat(v)
+	if b != 0 {
+		return true
+	}
+	if s, ok := v.(bool); ok {
+		return s
+	}
+	return false
+}

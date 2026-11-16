@@ -1,0 +1,126 @@
+// Package model 定义场景配置的数据模型。
+// 一个场景 = 一个 JSON 文件，内含有序步骤列表与全局设置。
+package model
+
+// Scenario 一个可独立运行的自动化场景，对应磁盘上的一个 JSON 文件。
+type Scenario struct {
+	Name      string            `json:"name"`
+	BaseURL   string            `json:"baseUrl,omitempty"`
+	Variables map[string]string `json:"variables,omitempty"`
+	Steps     []Step            `json:"steps"`
+}
+
+// NewScenario 返回一个带默认值的空场景。
+func NewScenario(name string) *Scenario {
+	return &Scenario{
+		Name:      name,
+		Variables: map[string]string{},
+		Steps:     []Step{},
+	}
+}
+
+// StepType 步骤类型。
+type StepType string
+
+const (
+	StepRequest StepType = "request" // 发送 HTTP 请求，可提取变量、断言
+	StepLoop    StepType = "loop"    // 循环执行子步骤，用于翻页/遍历
+	StepProcess StepType = "process" // 内置数据处理
+	StepScript  StepType = "script"  // 自定义 JavaScript 处理响应
+	StepExport  StepType = "export"  // 导出到 Excel / 文本 / JSON
+	StepAssert  StepType = "assert"  // 独立断言
+)
+
+// Step 单个执行步骤。字段按类型取用，未使用的字段留空即可。
+type Step struct {
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Type    StepType `json:"type"`
+	Enabled bool     `json:"enabled"`
+
+	// --- request 字段 ---
+	Method  string            `json:"method,omitempty"`
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Query   map[string]string `json:"query,omitempty"`
+	Body    string            `json:"body,omitempty"`
+	// Auth: bearer token 从变量读取（如 {{token}}）；cookie 由全局 CookieJar 自动管理
+	AuthType  string `json:"authType,omitempty"` // none | bearer | basic
+	AuthToken string `json:"authToken,omitempty"` // bearer: "{{token}}"
+	AuthUser  string `json:"authUser,omitempty"`
+	AuthPass  string `json:"authPass,omitempty"`
+
+	Extract []Extract `json:"extract,omitempty"`
+	Assert  []Assert  `json:"assert,omitempty"`
+
+	// --- loop 字段 ---
+	Loop *Loop `json:"loop,omitempty"`
+
+	// --- process 字段 ---
+	Op   string            `json:"op,omitempty"`
+	Args map[string]string `json:"args,omitempty"`
+
+	// --- script 字段 ---
+	Code string `json:"code,omitempty"`
+
+	// --- export 字段 ---
+	From   string `json:"from,omitempty"`   // 变量名，引用表格数据
+	Format string `json:"format,omitempty"` // xlsx | csv | txt | json
+	Path   string `json:"path,omitempty"`
+
+	// --- 通用 ---
+	Children []Step `json:"children,omitempty"` // loop 的子步骤
+	ContinueOnFail bool `json:"continueOnFail,omitempty"`
+}
+
+// Extract 从响应中提取一个变量。
+type Extract struct {
+	Name    string `json:"name"`             // 变量名
+	Source  string `json:"source,omitempty"` // body | header | cookie | status
+	Kind    string `json:"kind,omitempty"`   // jsonpath | regex | whole | header | cookie
+	Path    string `json:"path,omitempty"`   // jsonpath 表达式 / 正则 / header 名 / cookie 名
+	Group   int    `json:"group,omitempty"`  // 正则捕获组序号
+	Default string `json:"default,omitempty"`
+}
+
+// Assert 对响应做断言，实现"类似自动化测试"。
+type Assert struct {
+	Name   string `json:"name,omitempty"`
+	Source string `json:"source,omitempty"` // status | body | header | variable | jsonpath
+	Path   string `json:"path,omitempty"`   // jsonpath 表达式 / header 名 / 变量名
+	Op     string `json:"op,omitempty"`     // eq | ne | contains | exists | gt | gte | lt | lte
+	Value  string `json:"value,omitempty"`
+}
+
+// Loop 循环配置，支持三种模式：
+//   - count:   固定次数，配合 PageVar/PageStep 实现页码递增
+//   - foreach: 遍历一个数组变量（如提取出的列表）
+//   - until:   一直循环直到 BreakWhen 条件成立（常用于翻页到空数据）
+type Loop struct {
+	Mode      string `json:"mode"` // count | foreach | until
+	Count     int    `json:"count,omitempty"`
+	ListVar   string `json:"listVar,omitempty"`   // foreach: 数组变量名
+	ItemVar   string `json:"itemVar,omitempty"`   // foreach: 每次迭代写入的变量名
+	IndexVar  string `json:"indexVar,omitempty"`  // foreach: 索引变量名
+	BreakWhen string `json:"breakWhen,omitempty"` // until: 条件表达式，如 "{{len(rows)}} == 0"
+	PageVar   string `json:"pageVar,omitempty"`   // 页码变量名，每轮自动 +PageStep
+	PageStart int    `json:"pageStart,omitempty"`
+	PageStep  int    `json:"pageStep,omitempty"`
+	Max       int    `json:"max,omitempty"` // 最大轮数保护，默认 100
+}
+
+// Response 封装一次 HTTP 响应的结果，供提取、断言、脚本、导出使用。
+type Response struct {
+	StatusCode int
+	Headers    map[string][]string
+	Cookies    []*HTTPCookie
+	Body       []byte
+	JSON        interface{} // 解析后的 JSON（若 body 是 JSON）
+	Text        string
+}
+
+// HTTPCookie 简化 cookie，避免 model 依赖 net/http。
+type HTTPCookie struct {
+	Name  string
+	Value string
+}

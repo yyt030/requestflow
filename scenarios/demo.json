@@ -1,0 +1,66 @@
+{
+  "name": "示例：登录 → 翻页查询 → 导出文本",
+  "baseUrl": "https://httpbin.org",
+  "variables": {},
+  "steps": [
+    {
+      "id": "1",
+      "name": "登录并提取 Token",
+      "type": "request",
+      "enabled": true,
+      "method": "POST",
+      "url": "/post",
+      "body": "{\"user\":\"demo\",\"pwd\":\"123456\"}",
+      "extract": [
+        { "name": "token", "source": "body", "kind": "jsonpath", "path": "json.user" }
+      ],
+      "assert": [
+        { "name": "HTTP 200", "source": "status", "op": "eq", "value": "200" }
+      ]
+    },
+    {
+      "id": "2",
+      "name": "翻页拉取数据",
+      "type": "loop",
+      "enabled": true,
+      "loop": {
+        "mode": "count",
+        "count": 3,
+        "pageVar": "page",
+        "pageStart": 1,
+        "pageStep": 1,
+        "max": 20
+      },
+      "children": [
+        {
+          "id": "2-1",
+          "name": "拉取本页",
+          "type": "request",
+          "enabled": true,
+          "method": "GET",
+          "url": "/get?page={{page}}",
+          "extract": [
+            { "name": "page", "source": "body", "kind": "jsonpath", "path": "args.page" }
+          ]
+        },
+        {
+          "id": "2-2",
+          "name": "累积到 allRows",
+          "type": "process",
+          "enabled": true,
+          "op": "append",
+          "args": { "from": "page", "to": "allRows" }
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "name": "导出结果",
+      "type": "export",
+      "enabled": true,
+      "from": "allRows",
+      "format": "txt",
+      "path": "result.txt"
+    }
+  ]
+}

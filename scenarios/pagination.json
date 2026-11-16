@@ -1,0 +1,72 @@
+{
+  "name": "模板：until 模式翻页（翻到空数据自动停止）",
+  "baseUrl": "https://your-api.example.com",
+  "variables": {
+    "pageSize": "20"
+  },
+  "steps": [
+    {
+      "id": "login",
+      "name": "登录（Bearer Token，token 写入变量）",
+      "type": "request",
+      "enabled": true,
+      "method": "POST",
+      "url": "/api/login",
+      "headers": { "Content-Type": "application/json" },
+      "body": "{\"username\":\"{{username}}\",\"password\":\"{{password}}\"}",
+      "extract": [
+        { "name": "token", "source": "body", "kind": "jsonpath", "path": "data.token" }
+      ],
+      "assert": [
+        { "name": "登录成功", "source": "jsonpath", "path": "code", "op": "eq", "value": "0" }
+      ]
+    },
+    {
+      "id": "pages",
+      "name": "循环翻页拉取订单",
+      "type": "loop",
+      "enabled": true,
+      "loop": {
+        "mode": "until",
+        "breakWhen": "{{len(rows)}} == 0",
+        "pageVar": "page",
+        "pageStart": 1,
+        "pageStep": 1,
+        "max": 100
+      },
+      "children": [
+        {
+          "id": "fetch",
+          "name": "拉取第 {{page}} 页",
+          "type": "request",
+          "enabled": true,
+          "method": "GET",
+          "url": "/api/orders",
+          "query": { "page": "{{page}}", "size": "{{pageSize}}" },
+          "authType": "bearer",
+          "authToken": "{{token}}",
+          "extract": [
+            { "name": "rows", "source": "body", "kind": "jsonpath", "path": "data.list" }
+          ]
+        },
+        {
+          "id": "merge",
+          "name": "累积合并到 allRows",
+          "type": "process",
+          "enabled": true,
+          "op": "flatten",
+          "args": { "from": "allRows, rows", "to": "allRows" }
+        }
+      ]
+    },
+    {
+      "id": "export",
+      "name": "导出 Excel",
+      "type": "export",
+      "enabled": true,
+      "from": "allRows",
+      "format": "xlsx",
+      "path": "orders.xlsx"
+    }
+  ]
+}
