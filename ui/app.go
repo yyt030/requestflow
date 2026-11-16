@@ -15,6 +15,7 @@ import (
 
 	"requestflow/engine"
 	"requestflow/model"
+	"requestflow/version"
 )
 
 // App 保存界面所有可变状态。view 是纯函数：从状态构建界面。
@@ -67,7 +68,7 @@ func Run() {
 	app.logs = append(app.logs, "就绪。打开或新建场景，配置步骤后点击【一键运行】。")
 	mygo.App.WhenReady(func() {
 		app.win = mygo.NewWindow(mygo.WindowOptions{
-			Title:  "RequestFlow · HTTP 流程自动化",
+			Title:  "RequestFlow " + version.Short() + " · HTTP 流程自动化",
 			Width:  1180,
 			Height: 780,
 			Content: ui.View(app.view),
@@ -113,7 +114,26 @@ func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
 		if ui.Button(c, "■ 停止").Disabled(!a.running).Clicked() {
 			a.stop()
 		}
+		ui.Divider(c).Height(20)
+		if ui.Button(c, "ⓘ "+version.Short()).Clicked() {
+			a.showAbout()
+		}
 	})
+}
+
+// showAbout 弹出"关于"对话框展示完整版本信息。
+// Dialog.Message 会阻塞，因此放到独立 goroutine 中调用。
+func (a *App) showAbout() {
+	go func() {
+		_, _ = mygo.Dialog.Message(mygo.MessageOptions{
+			Parent:  a.win,
+			Type:    mygo.MessageInfo,
+			Title:   "关于 RequestFlow",
+			Message: version.String(),
+			Detail:  version.Detail(),
+			Buttons: []string{"确定"},
+		})
+	}()
 }
 
 // ---------- 左侧：场景信息 + 步骤列表 ----------

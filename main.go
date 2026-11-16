@@ -8,12 +8,19 @@ import (
 	"requestflow/engine"
 	"requestflow/model"
 	"requestflow/ui"
+	"requestflow/version"
 	"encoding/json"
 )
 
 func main() {
 	runFile := flag.String("run", "", "以无界面模式运行指定场景 JSON")
+	showVersion := flag.Bool("version", false, "显示版本号并退出")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version.String())
+		return
+	}
 
 	if *runFile != "" {
 		runHeadless(*runFile)

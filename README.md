@@ -20,10 +20,35 @@
 - 桌面环境用于 GUI；无界面模式无需桌面
 
 ```bash
-go build -o requestflow .     # 编译
-./requestflow                 # 启动 GUI
-./requestflow -run scenarios/demo.json   # 无界面运行
+./build.sh                              # 推荐：自动注入版本号构建（见下）
+./requestflow                           # 启动 GUI
+./requestflow -run scenarios/demo.json  # 无界面运行
+./requestflow -version                  # 查看版本号
+# 或普通编译（版本号为 dev）：
+go build -o requestflow .
 ```
+
+## 版本号
+
+版本号由 git 的 **tag + commit hash** 自动生成，构建时通过 `-ldflags -X` 注入二进制：
+
+| 字段 | 来源 | 示例 |
+|---|---|---|
+| 版本 | `git describe --tags --always --dirty` | `v1.0.0`、`v1.0.0-3-gabc1234`、`v1.0.0-dirty` |
+| 提交哈希 | `git rev-parse HEAD` | `55a27e3d3219...` |
+| 构建时间 | `date -u`（RFC3339） | `2026-11-16T14:39:44Z` |
+
+打 tag 后构建即为干净版本号；tag 之后有新提交会自动带 `-N-gHASH`；工作区有未提交改动带 `-dirty`。
+
+```bash
+./build.sh                # 输出 ./requestflow，自动注入上述信息
+./build.sh -o ./bin/rf    # 指定输出路径
+VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
+```
+
+**查看方式**：
+- CLI：`./requestflow -version` 打印单行完整版本
+- GUI：窗口标题栏显示版本号；工具栏右侧的 `ⓘ 版本号` 按钮点击后弹出完整信息（版本/哈希/构建时间/Go 版本/平台）
 
 ## 设计架构
 
@@ -164,17 +189,19 @@ log("共 " + vars.total + " 条");
 ## 测试
 
 ```bash
-go test ./engine/... -v
+go test ./...       # 全部包（engine / ui / version）
 ```
 
-已覆盖：登录提取 Token + Bearer 注入、Cookie 会话、循环翻页终止、脚本写变量 + 导出、表达式求值。
+已覆盖：登录提取 Token + Bearer 注入、Cookie 会话、循环翻页终止、脚本写变量 + 导出、表达式求值、表格构建、变量增删改、版本信息格式化。
 
 ## 目录
 
 ```
-main.go            入口（GUI / -run 无界面）
+main.go            入口（GUI / -run 无界面 / -version）
 model/model.go     数据模型
 engine/            执行引擎 + 单元测试
 ui/app.go          mygo 原生界面
+version/version.go 版本信息（构建期注入）+ 单元测试
+build.sh           自动注入版本号的构建脚本
 scenarios/         示例场景
 ```
