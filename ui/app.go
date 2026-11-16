@@ -55,6 +55,11 @@ type App struct {
 	showVars    bool
 	newVarKey   string
 	newVarValue string
+
+	// cURL 导入面板
+	showImport bool
+	importText string
+	importMsg  string
 }
 
 // Run 启动 GUI。
@@ -108,6 +113,10 @@ func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
 			a.saveScenario()
 		}
 		ui.Divider(c).Height(20)
+		if ui.Button(c, "⇥ 导入 cURL").Clicked() {
+			a.showImport = !a.showImport
+			a.importMsg = ""
+		}
 		if ui.PrimaryButton(c, "▶ 一键运行").Disabled(a.running).Clicked() {
 			a.run()
 		}
@@ -287,6 +296,11 @@ func (a *App) stepLabel(s model.Step) string {
 
 // ---------- 中间：步骤编辑器 ----------
 func (a *App) editor(c *ui.Context, t *ui.Theme) {
+	// cURL 导入模式：覆盖编辑器区域
+	if a.showImport {
+		a.importPanel(c, t)
+		return
+	}
 	ui.Column(c).Fill().Children(func() {
 		if a.selectedStep < 0 || a.selectedStep >= len(a.scenario.Steps) {
 			ui.Column(c).Fill().Center().Gap(8).Children(func() {
@@ -324,6 +338,70 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 			}
 		})
 	})
+}
+
+// importPanel 展示 cURL 粘贴与解析界面。
+func (a *App) importPanel(c *ui.Context, t *ui.Theme) {
+	ui.Column(c).Fill().Children(func() {
+		ui.Scroll(c).Grow(1).Padding(16).Gap(10).Children(func() {
+			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "从 Chrome 导入 cURL").FontSize(15).Bold()
+				ui.Spacer(c)
+				if ui.Button(c, "✕ 关闭").Clicked() {
+					a.showImport = false
+					a.importMsg = ""
+				}
+			})
+			ui.Text(c, "在 Chrome 开发者工具 Network 面板中右键请求 → Copy → Copy as cURL，粘贴到下方，点击解析即可生成请求步骤。").FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, "支持 bash / cmd / PowerShell 三种复制格式；自动识别 Bearer Token、Cookie、查询参数与请求体。").FontSize(11).TextColor(t.TextMuted)
+			ui.TextArea(c, &a.importText).Placeholder("curl 'https://api.example.com/orders?page=1' \\\n  -H 'authorization: Bearer xxx' \\\n  -H 'cookie: session=abc'").Height(200)
+			if a.importMsg != "" {
+				msgColor := t.Accent
+				if strings.HasPrefix(a.importMsg, "✗") {
+					msgColor = t.Danger
+				}
+				ui.Text(c, a.importMsg).FontSize(11).TextColor(msgColor)
+			}
+		})
+		ui.Row(c).Gap(8).Padding(16, 12).AlignItems(ui.Center).Children(func() {
+			if ui.PrimaryButton(c, "⇥ 解析并添加为步骤").Clicked() {
+				a.doImportCurl()
+			}
+			if ui.Button(c, "清空").Clicked() {
+				a.importText = ""
+				a.importMsg = ""
+			}
+		})
+	})
+}
+
+// doImportCurl 解析粘贴的 cURL，成功则生成一个 request 步骤追加到场景末尾。
+func (a *App) doImportCurl() {
+	text := strings.TrimSpace(a.importText)
+	if text == "" {
+		a.importMsg = "✗ 请先粘贴 cURL 命令"
+		return
+	}
+	req, err := engine.ParseCurl(text)
+	if err != nil {
+		a.importMsg = "✗ 解析失败: " + err.Error()
+		return
+	}
+	step := req.ToStep("", a.scenario.BaseURL)
+	a.scenario.Steps = append(a.scenario.Steps, step)
+	a.selectedStep = len(a.scenario.Steps) - 1
+	a.showImport = false
+	a.importText = ""
+	a.importMsg = ""
+	a.log("已导入 cURL 请求: " + step.Method + " " + previewURL(step.URL))
+}
+
+// previewURL 截断 URL 用于日志显示。
+func previewURL(u string) string {
+	if len(u) > 48 {
+		return u[:48] + "…"
+	}
+	return u
 }
 
 func (a *App) editorRequest(c *ui.Context, t *ui.Theme, step *model.Step) {

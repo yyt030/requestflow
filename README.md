@@ -11,6 +11,7 @@
 - **循环翻页**：`count`（固定次数）、`foreach`（遍历数组）、`until`（翻到空数据自动停）三种模式，页码变量自动递增。
 - **内置处理 + 自定义脚本**：常用处理逻辑内置；复杂逻辑用 JavaScript（goja）直接处理响应。
 - **多格式导出**：xlsx / csv / txt / json。
+- **从 Chrome 一键导入 cURL**：DevTools 中右键请求 → Copy as cURL，粘贴后一键解析成请求步骤，自动识别 Bearer Token、Cookie、查询参数与请求体，支持 bash / cmd / PowerShell 三种格式。
 - **类似自动化测试**：每步可配断言（状态码 / JSONPath / 文本包含 / 变量比较），失败即中止，也可设「失败后继续」。
 - **无界面模式**：`requestflow -run scenario.json` 便于 CI / 命令行跑批。
 
@@ -70,6 +71,8 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 5. 中间配置当前步骤：请求方法/URL/Body、提取规则、断言等。
 6. 点「▶ 一键运行」；底部切到 **日志** 看实时过程、**结果表** 看提取的数据表格、**变量** 看全部运行时变量；可随时「■ 停止」。
 7. 「保存」把场景导出为 JSON，可复用或纳入版本管理。
+
+**不想手工配请求？** 点工具栏「⇥ 导入 cURL」：在 Chrome 开发者工具 Network 面板右键目标请求 → **Copy → Copy as cURL**，粘贴到面板里点「解析并添加为步骤」。URL、方法、请求头、Cookie、查询参数、请求体自动填好；若请求 URL 以顶部 Base URL 开头，会自动替换成 `{{baseUrl}}` 便于环境切换。
 
 ## 场景 JSON 格式
 
@@ -199,7 +202,7 @@ go test ./...       # 全部包（engine / ui / version）
 ```
 main.go            入口（GUI / -run 无界面 / -version）
 model/model.go     数据模型
-engine/            执行引擎 + 单元测试
+engine/            执行引擎 + cURL 解析器 + 单元测试
 ui/app.go          mygo 原生界面
 version/version.go 版本信息（构建期注入）+ 单元测试
 build.sh           自动注入版本号的构建脚本
