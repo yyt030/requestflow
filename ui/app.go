@@ -267,6 +267,7 @@ func (a *App) addMenu(c *ui.Context, t *ui.Theme) {
 			typ   model.StepType
 		}{
 			{"HTTP 请求", model.StepRequest},
+			{"条件分支", model.StepBranch},
 			{"循环 / 翻页", model.StepLoop},
 			{"内置处理", model.StepProcess},
 			{"自定义脚本", model.StepScript},
@@ -318,7 +319,7 @@ func (a *App) stepList(c *ui.Context, t *ui.Theme) {
 
 func (a *App) stepLabel(s model.Step) string {
 	icon := map[model.StepType]string{
-		model.StepRequest: "⇄", model.StepLoop: "↻", model.StepProcess: "⚙",
+		model.StepRequest: "⇄", model.StepLoop: "↻", model.StepBranch: "分", model.StepProcess: "⚙",
 		model.StepScript: "JS", model.StepAssert: "✓", model.StepExport: "⇩",
 	}[s.Type]
 	name := s.Name
@@ -361,6 +362,8 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 				a.editorRequest(c, t, step)
 			case model.StepLoop:
 				a.editorLoop(c, t, step)
+			case model.StepBranch:
+				a.editorBranch(c, t, step)
 			case model.StepProcess:
 				a.editorProcess(c, t, step)
 			case model.StepScript:
@@ -736,6 +739,127 @@ func (a *App) editorAssertList(c *ui.Context, t *ui.Theme, step *model.Step) {
 	}
 }
 
+// editorBranch 条件分支编辑器：可视化拼装条件 + then/else 子步骤。
+func (a *App) editorBranch(c *ui.Context, t *ui.Theme, step *model.Step) {
+	if step.Branch == nil {
+		step.Branch = &model.Branch{Logic: "and", Conditions: []model.Condition{{Op: "大于"}}}
+	}
+	br := step.Branch
+
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, "条件").FontSize(12).Bold()
+		ui.Spacer(c)
+		logics := []string{"and", "or"}
+		if br.Logic == "" {
+			br.Logic = "and"
+		}
+		ui.Select(c, &br.Logic, logics).Width(80)
+		ui.Text(c, map[string]string{"and": "全部满足", "or": "任一满足"}[br.Logic]).FontSize(10).TextColor(t.TextMuted)
+	})
+
+	// 条件列表：每行 = 变量名 + 操作符 + 比较值
+	ops := []string{"大于", "大于等于", "小于", "小于等于", "等于", "不等于", "包含", "不包含", "存在", "为空", "为真"}
+	for i := range br.Conditions {
+		cond := &br.Conditions[i]
+		idx := i
+		ui.Column(c.Key(fmt.Sprintf("cond-%d", idx))).Padding(8).Gap(5).Background(t.Surface).Radius(8).Children(func() {
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, fmt.Sprintf("条件 %d", idx+1)).FontSize(10).TextColor(t.TextMuted).Width(48)
+				ui.Spacer(c)
+				if ui.Button(c.Key("del"), "移除").Clicked() {
+					br.Conditions = append(br.Conditions[:idx], br.Conditions[idx+1:]...)
+				}
+			})
+			ui.Row(c).Gap(6).Children(func() {
+				ui.TextInput(c, &cond.Var).Placeholder("变量名，如 amount").Grow(1)
+				if cond.Op == "" {
+					cond.Op = "大于"
+				}
+				ui.Select(c, &cond.Op, ops).Width(90)
+				// 存在/为空/为真 无需比较值
+				needValue := cond.Op != "存在" && cond.Op != "为空" && cond.Op != "为真"
+				if needValue {
+					ui.TextInput(c, &cond.Value).Placeholder("值，如 0").Width(90)
+				}
+			})
+		})
+	}
+	ui.Row(c).Gap(8).Children(func() {
+		if ui.Button(c, "+ 添加条件").Clicked() {
+			br.Conditions = append(br.Conditions, model.Condition{Op: "等于"})
+		}
+	})
+
+	ui.Divider(c)
+	ui.Text(c, "高级：直接写条件表达式（留空则用上方条件）").FontSize(10).TextColor(t.TextMuted)
+	ui.TextInput(c, &br.When).Placeholder("{{amount}} > 0  或  {{len(rows)}} == 0")
+
+	ui.Divider(c)
+	ui.Text(c, "条件成立 → then").FontSize(12).Bold().TextColor(t.Accent)
+	a.editorBranchChildren(c, t, step, &br.Then, "then")
+	ui.Text(c, "条件不成立 → else").FontSize(12).Bold().TextColor(t.TextMuted)
+	a.editorBranchChildren(c, t, step, &br.Else, "else")
+}
+
+// editorBranchChildren 编辑分支的 then/else 子步骤（复用简化的子步骤表单）。
+func (a *App) editorBranchChildren(c *ui.Context, t *ui.Theme, step *model.Step, children *[]model.Step, slot string) {
+	ui.Row(c).Gap(8).Children(func() {
+		if ui.Button(c.Key("http"), "+ 请求").Clicked() {
+			*children = append(*children, model.Step{ID: newID(), Name: "请求", Type: model.StepRequest, Enabled: true, Method: "GET"})
+		}
+		if ui.Button(c.Key("script"), "+ 脚本").Clicked() {
+			*children = append(*children, model.Step{ID: newID(), Name: "脚本", Type: model.StepScript, Enabled: true})
+		}
+		if ui.Button(c.Key("process"), "+ 处理").Clicked() {
+			*children = append(*children, model.Step{ID: newID(), Name: "处理", Type: model.StepProcess, Enabled: true, Op: "set"})
+		}
+	})
+	if len(*children) == 0 {
+		ui.Text(c, "（无子步骤）").FontSize(10).TextColor(t.TextMuted)
+	}
+	for i := range *children {
+		child := &(*children)[i]
+		idx := i
+		ui.Column(c.Key(fmt.Sprintf("%s-child-%d", slot, idx))).Padding(8).Gap(5).Background(t.Surface).Radius(8).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, a.stepLabel(*child)).Grow(1)
+				if ui.Button(c.Key("del"), "移除").Clicked() {
+					*children = append((*children)[:idx], (*children)[idx+1:]...)
+				}
+			})
+			ui.TextInput(c, &child.Name).Label("名称")
+			switch child.Type {
+			case model.StepRequest:
+				ui.Row(c).Gap(6).Children(func() {
+					methods := []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
+					ui.Select(c, &child.Method, methods).Width(90)
+					ui.TextInput(c, &child.URL).Placeholder("{{baseUrl}}/path").Grow(1)
+				})
+				ui.TextInput(c, &child.Body).Placeholder("Body（可选）")
+				a.editorExtract(c, t, child)
+			case model.StepScript:
+				ui.TextArea(c, &child.Code).Placeholder("vars.result = 'ok';").Height(60)
+			case model.StepProcess:
+				ops := []string{"set", "append", "json_to_table", "filter", "sort", "pick", "flatten"}
+				op := child.Op
+				if op == "" {
+					op = "set"
+				}
+				if ui.Select(c, &op, ops).Label("处理").Changed() {
+					child.Op = op
+				}
+				if child.Args == nil {
+					child.Args = map[string]string{}
+				}
+				argsText := mapToString(child.Args)
+				if ui.TextArea(c, &argsText).Height(50).Changed() {
+					child.Args = stringToMap(argsText, "=")
+				}
+			}
+		})
+	}
+}
+
 func (a *App) editorLoop(c *ui.Context, t *ui.Theme, step *model.Step) {
 	if step.Loop == nil {
 		step.Loop = &model.Loop{Mode: "until", Max: 20, PageVar: "page", PageStart: 1, PageStep: 1}
@@ -1082,6 +1206,8 @@ func (a *App) appendStep(typ model.StepType) {
 		s.Assert = []model.Assert{}
 	case model.StepLoop:
 		s.Loop = &model.Loop{Mode: "until", Max: 20, PageVar: "page", PageStart: 1, PageStep: 1}
+	case model.StepBranch:
+		s.Branch = &model.Branch{Logic: "and", Conditions: []model.Condition{{Op: "大于"}}}
 	case model.StepExport:
 		s.Format = "xlsx"
 		s.Path = "result.xlsx"
@@ -1274,6 +1400,8 @@ func defaultStepName(t model.StepType) string {
 		return "HTTP 请求"
 	case model.StepLoop:
 		return "循环/翻页"
+	case model.StepBranch:
+		return "条件分支"
 	case model.StepProcess:
 		return "数据处理"
 	case model.StepScript:

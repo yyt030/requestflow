@@ -1,0 +1,59 @@
+{
+  "name": "示例：根据金额正负走不同分支",
+  "baseUrl": "https://httpbin.org",
+  "variables": {
+    "amount": "88"
+  },
+  "steps": [
+    {
+      "id": "1",
+      "name": "查询余额并提取金额",
+      "type": "request",
+      "enabled": true,
+      "method": "GET",
+      "url": "/get?amount={{amount}}",
+      "extract": [
+        { "name": "balance", "source": "body", "kind": "jsonpath", "path": "args.amount" }
+      ]
+    },
+    {
+      "id": "2",
+      "name": "按金额正负分支",
+      "type": "branch",
+      "enabled": true,
+      "branch": {
+        "logic": "and",
+        "conditions": [
+          { "var": "balance", "op": "大于", "value": "0" }
+        ],
+        "when": "",
+        "then": [
+          {
+            "id": "2a",
+            "name": "金额为正：请求详情页",
+            "type": "request",
+            "enabled": true,
+            "method": "GET",
+            "url": "/get?page=detail&balance={{balance}}",
+            "extract": [
+              { "name": "resultPage", "source": "body", "kind": "jsonpath", "path": "args.page" }
+            ]
+          }
+        ],
+        "else": [
+          {
+            "id": "2b",
+            "name": "金额为负：请求告警页",
+            "type": "request",
+            "enabled": true,
+            "method": "GET",
+            "url": "/get?page=warning&balance={{balance}}",
+            "extract": [
+              { "name": "resultPage", "source": "body", "kind": "jsonpath", "path": "args.page" }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -6,7 +6,8 @@
 
 - **可视化配置**：左侧步骤列表可勾选启用、上下排序、删除；**全局变量可视化编辑（增/改/删）**；中间按步骤类型显示表单。
 - **执行可视化**：底部三视图切换 —— **日志 / 结果表 / 变量**。结果表用原生表格展示提取的数组数据（可选数据源、列排序、刷新）；变量视图列出全部运行时变量。
-- **可配置顺序步骤**：`request / loop / process / script / assert / export` 六种步骤自由编排。
+- **可配置顺序步骤**：`request / branch / loop / process / script / assert / export` 七种步骤自由编排。
+- **条件分支（可视化配置）**：`branch` 步骤按条件走不同分支——**变量 + 操作符（大于/小于/等于/包含/为空…）+ 值** 下拉拼装，支持 and/or 组合与嵌套；条件成立执行 then、否则执行 else，各分支内可放请求/脚本/处理子步骤。也可切换高级模式直接写 `{{amount}} > 0` 表达式。
 - **两种登录态**：Bearer Token 从响应提取到变量后用 `{{token}}` 注入；Cookie 会话由全局 CookieJar 自动跨步骤携带。
 - **循环翻页**：`count`（固定次数）、`foreach`（遍历数组）、`until`（翻到空数据自动停）三种模式，页码变量自动递增。
 - **内置处理 + 自定义脚本**：常用处理逻辑内置；复杂逻辑用 JavaScript（goja）直接处理响应。
@@ -89,6 +90,17 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 
 **只想调试单个接口？** 点工具栏「⚡ 接口调试」打开调试面板：上半区配置请求（方法 / URL / Headers / Query / Body / 认证 / 超时 / TLS），点「▶ 发送」；下半区即时查看响应，四个标签页分别是**响应体**（JSON 自动美化）、**响应头**、**Cookie**、**cURL**（当前请求反向生成的命令，可一键「⇥ cURL 导入」导回场景）。URL、Header、Body 都支持 `{{变量}}`，自动套用场景全局变量与 Base URL。如果在编排模式下想快速验证某个 request 步骤，可直接在步骤编辑器点「⚡ 试发送此请求」，会自动载入该步骤配置并发起调试。
 
+### 步骤间如何衔接 + 条件分支
+
+步骤共享一个**变量上下文**：上一步用 `extract` 把响应字段（JSONPath / 正则 / Header / Cookie）提取成变量，下一步在 URL / Header / Body 里用 `{{变量名}}` 引用——登录 token、查询结果都靠它串联。`branch` 步骤在这个基础上做判断，实现「根据上一步返回内容走不同请求」：
+
+> 例：上一步提取金额为 `balance`，正的走详情页、负的走告警页
+
+1. 步骤 1（request）：请求余额接口，`extract` 把金额存为 `balance`（JSONPath `args.amount`）。
+2. 步骤 2（branch）：条件配 `balance` **大于** `0`；then 放「请求详情页」、else 放「请求告警页」——两个分支都是普通的 request 子步骤，可继续提取变量。
+
+条件用界面下拉拼装（变量 + 操作符 + 值），支持 **and/or** 多个条件组合；操作符有大于/大于等于/小于/小于等于/等于/不等于/包含/不包含/存在/为空/为真，数值和字符串都能比。多条件用 and/or 组合即可（不必写 `&&`）；若偏好表达式，「高级」框支持单个比较如 `{{amount}} > 0` 或 `{{len(rows)}} == 0`（走 `Eval`）。分支可**嵌套**（分支的 then/else 里再放分支），也可放在 loop 循环体内。完整可运行示例见 `scenarios/branch-demo.json`。
+
 ## 场景 JSON 格式
 
 ```jsonc
@@ -136,6 +148,7 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 | type | 作用 | 关键字段 |
 |---|---|---|
 | `request` | 发 HTTP 请求 | `method` `url` `headers` `query` `body` `authType` `authToken` `extract` `assert` |
+| `branch` | 条件分支 | `branch`（`conditions`+`logic` 或 `when`；`then`/`else` 子步骤） |
 | `loop` | 循环子步骤（翻页） | `loop`（见下表）+ `children` |
 | `process` | 内置数据处理 | `op` + `args` |
 | `script` | 自定义 JS 处理 | `code` |

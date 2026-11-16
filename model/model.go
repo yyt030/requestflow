@@ -25,6 +25,7 @@ type StepType string
 const (
 	StepRequest StepType = "request" // 发送 HTTP 请求，可提取变量、断言
 	StepLoop    StepType = "loop"    // 循环执行子步骤，用于翻页/遍历
+	StepBranch  StepType = "branch"  // 条件分支：when 成立执行 then，否则执行 else
 	StepProcess StepType = "process" // 内置数据处理
 	StepScript  StepType = "script"  // 自定义 JavaScript 处理响应
 	StepExport  StepType = "export"  // 导出到 Excel / 文本 / JSON
@@ -55,6 +56,9 @@ type Step struct {
 
 	// --- loop 字段 ---
 	Loop *Loop `json:"loop,omitempty"`
+
+	// --- branch 字段 ---
+	Branch *Branch `json:"branch,omitempty"`
 
 	// --- process 字段 ---
 	Op   string            `json:"op,omitempty"`
@@ -107,6 +111,24 @@ type Loop struct {
 	PageStart int    `json:"pageStart,omitempty"`
 	PageStep  int    `json:"pageStep,omitempty"`
 	Max       int    `json:"max,omitempty"` // 最大轮数保护，默认 100
+}
+
+// Condition 单个条件：对变量值做比较（可视化配置用）。
+// 求值时先取 Var 变量的值，再按 Op 与 Value 比较。
+type Condition struct {
+	Var   string `json:"var"`            // 变量名，如 amount（也支持点路径）
+	Op    string `json:"op"`             // gt|gte|lt|lte|eq|ne|contains|exists|empty|true
+	Value string `json:"value,omitempty"` // 比较值；exists/empty/true 时忽略
+}
+
+// Branch 条件分支配置。Conditions 按 Logic（and/or）组合；
+// 也可直接用 When 写原始表达式（非空时优先于 Conditions）。
+type Branch struct {
+	Logic      string      `json:"logic,omitempty"` // and | or，默认 and
+	Conditions []Condition `json:"conditions,omitempty"`
+	When       string      `json:"when,omitempty"` // 高级：原始表达式，如 {{amount}} > 0
+	Then       []Step      `json:"then,omitempty"` // 条件成立时执行的子步骤
+	Else       []Step      `json:"else,omitempty"` // 条件不成立时执行的子步骤
 }
 
 // Response 封装一次 HTTP 响应的结果，供提取、断言、脚本、导出使用。
