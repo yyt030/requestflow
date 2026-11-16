@@ -30,6 +30,18 @@
 go build -o requestflow .
 ```
 
+## 打包（Windows 分发）
+
+默认只打 **Windows / amd64**，一条命令生成可直接分发的 zip（含 exe、README、示例场景、使用说明与 SHA256 校验文件）：
+
+```bash
+./pack.sh                       # 默认 windows/amd64 → dist/requestflow-<版本>-windows-amd64.zip
+./pack.sh windows/arm64         # 需要其他平台时显式指定 <goos>/<goarch>
+VERSION=v2.0.0 ./pack.sh        # CI 中手动指定版本号
+```
+
+产物在 `dist/`，解压后双击 `requestflow.exe` 即可用 GUI；命令行支持 `-run` / `-version`。版本号由 git tag + commit 自动注入，无需 cgo。
+
 ## 版本号
 
 版本号由 git 的 **tag + commit hash** 自动生成，构建时通过 `-ldflags -X` 注入二进制：

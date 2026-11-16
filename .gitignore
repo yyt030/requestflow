@@ -1,6 +1,7 @@
 # 编译产物
 /requestflow
 /flowhttp
+/dist/
 *.exe
 *.exe~
 *.dll
