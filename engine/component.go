@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"requestflow/model"
 )
@@ -54,10 +55,46 @@ func (e *Engine) runSwitch(step model.Step, depth int) error {
 
 // taskProduct 并行子任务的产物与执行结果。
 type taskProduct struct {
-	name  string
-	value interface{}
-	err   error
-	index int
+	name     string
+	value    interface{}
+	err      error
+	index    int
+	duration int64 // 耗时（毫秒）
+}
+
+// taskStatusVar 默认的任务状态登记表变量名。
+const taskStatusVar = "task"
+
+// registerTaskStatus 把各并行任务的执行状态写入上下文，供 merge 门控表达式引用。
+// 结构：task.<任务名>.status = success|fail；.output；.error；.duration(ms)。
+// 同时写入 task.success/failed/total 汇总计数与 task.allSuccess 布尔。
+func (e *Engine) registerTaskStatus(p *model.Parallel, rs []taskProduct) {
+	name := p.StatusVar
+	if name == "" {
+		name = taskStatusVar
+	}
+	table := make(map[string]interface{}, len(rs)+4)
+	success, failed := 0, 0
+	for _, r := range rs {
+		status, errText := "success", ""
+		if r.err != nil {
+			status, errText = "fail", r.err.Error()
+			failed++
+		} else {
+			success++
+		}
+		table[r.name] = map[string]interface{}{
+			"status":   status,
+			"output":   r.value,
+			"error":    errText,
+			"duration": r.duration,
+		}
+	}
+	table["success"] = success
+	table["failed"] = failed
+	table["total"] = len(rs)
+	table["allSuccess"] = failed == 0
+	e.ctx.Set(name, table)
 }
 
 // runParallel 并行结果汇合：并发执行每个子任务（各自独立的变量沙箱，
@@ -79,6 +116,7 @@ func (e *Engine) runParallel(step model.Step, depth int) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			started := time.Now()
 			name := task.Name
 			if name == "" {
 				name = fmt.Sprintf("task %d", idx+1)
@@ -99,7 +137,8 @@ func (e *Engine) runParallel(step model.Step, depth int) error {
 					continue
 				}
 				if err := sub.runStep(child, depth+1); err != nil {
-					results[idx] = taskProduct{name: name, err: err, index: idx}
+					results[idx] = taskProduct{name: name, err: err, index: idx,
+						duration: time.Since(started).Milliseconds()}
 					return
 				}
 			}
@@ -113,10 +152,14 @@ func (e *Engine) runParallel(step model.Step, depth int) error {
 			default:
 				product = sub.ctx.Snapshot()
 			}
-			results[idx] = taskProduct{name: name, value: product, index: idx}
+			results[idx] = taskProduct{name: name, value: product, index: idx,
+				duration: time.Since(started).Milliseconds()}
 		}()
 	}
 	wg.Wait()
+
+	// 登记任务状态（无论成败），供后续 merge 步骤做门控判断。
+	e.registerTaskStatus(p, results)
 
 	// 收集错误
 	var firstErr error
@@ -224,4 +267,27 @@ func flattenToStrings(v interface{}) []string {
 		}
 	}
 	return []string{toStr(v)}
+}
+
+// runMerge 扇入门控：等待上游 parallel 的所有任务完成后（parallel 本身已同步等待），
+// 用高级表达式检查任务状态/产物。条件不成立即返回错误，中止整个场景。
+// 表达式可引用 task.<任务名>.status/output/error/duration 及 task.success/failed/allSuccess 等汇总。
+func (e *Engine) runMerge(step model.Step) error {
+	m := step.Merge
+	if m == nil {
+		return fmt.Errorf("merge 步骤缺少 merge 配置")
+	}
+	when := strings.TrimSpace(m.When)
+	if when == "" {
+		// 未提供表达式时，默认要求全部任务成功。
+		when = "task.allSuccess"
+	}
+	ok := truthy(e.ctx.Eval(when))
+	if !ok {
+		snapshot := e.ctx.Get(taskStatusVar)
+		e.emit("log", step.ID, step.Name, fmt.Sprintf("扇入门控未通过 [%s]，任务状态: %v", when, snapshot))
+		return fmt.Errorf("扇入门控失败：条件 %q 不成立，中止场景", when)
+	}
+	e.emit("log", step.ID, step.Name, fmt.Sprintf("扇入门控通过 [%s]，放行后续任务", when))
+	return nil
 }

@@ -27,7 +27,8 @@ const (
 	StepLoop     StepType = "loop"     // 循环执行子步骤，用于翻页/遍历
 	StepBranch   StepType = "branch"   // 条件分支：when 成立执行 then，否则执行 else
 	StepSwitch   StepType = "switch"   // 多分支：自上而下匹配第一个 case，否则 default
-	StepParallel StepType = "parallel" // 并行结果汇合：多个子任务并行执行后汇合产物
+	StepParallel StepType = "parallel" // 扇出：多个子任务并行执行
+	StepMerge    StepType = "merge"    // 扇入：等待并行任务全部成功后按条件门控放行
 	StepProcess  StepType = "process"  // 内置数据处理
 	StepScript   StepType = "script"   // 自定义 JavaScript 处理响应
 	StepExport   StepType = "export"   // 导出到 Excel / 文本 / JSON
@@ -67,6 +68,9 @@ type Step struct {
 
 	// --- parallel 字段 ---
 	Parallel *Parallel `json:"parallel,omitempty"`
+
+	// --- merge 字段 ---
+	Merge *Merge `json:"merge,omitempty"`
 
 	// --- process 字段 ---
 	Op   string            `json:"op,omitempty"`
@@ -171,10 +175,19 @@ type ParallelTask struct {
 //   - concat: 各任务产物转为字符串后拼接（可用 Separator 分隔）
 type Parallel struct {
 	Tasks     []ParallelTask `json:"tasks,omitempty"`
-	Var       string         `json:"var,omitempty"`       // 汇合结果写入的变量名
-	Mode      string         `json:"mode,omitempty"`      // array | object | table | concat
-	Separator string         `json:"separator,omitempty"` // concat 模式的拼接分隔符
-	FailFast  bool           `json:"failFast,omitempty"`  // 子任务失败时是否立即失败（默认忽略并继续）
+	Var       string         `json:"var,omitempty"`          // 汇合结果写入的变量名
+	Mode      string         `json:"mode,omitempty"`         // array | object | table | concat
+	Separator string         `json:"separator,omitempty"`    // concat 模式的拼接分隔符
+	FailFast  bool           `json:"failFast,omitempty"`     // 子任务失败时是否立即失败（默认忽略并继续）
+	StatusVar string         `json:"statusVar,omitempty"`    // 任务状态登记表写入的变量名，默认 task
+}
+
+// Merge 扇入门控配置：等待上游 parallel 的所有任务完成后，用高级表达式检查各任务状态/产物。
+// 表达式可引用：task.<任务名>.status（success|fail）、task.<任务名>.output、
+// task.<任务名>.error、task.<任务名>.duration，也支持 len(task) 等函数与 && / || 组合。
+// 条件不成立即中止整个场景（类似断言失败）。
+type Merge struct {
+	When string `json:"when,omitempty"` // 门控表达式，如 task.A.status == "success" && task.B.status == "success"
 }
 
 // Response 封装一次 HTTP 响应的结果，供提取、断言、脚本、导出使用。

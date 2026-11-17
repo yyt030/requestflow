@@ -116,6 +116,8 @@ func (e *Engine) runStep(step model.Step, depth int) error {
 		err = e.runSwitch(step, depth)
 	case model.StepParallel:
 		err = e.runParallel(step, depth)
+	case model.StepMerge:
+		err = e.runMerge(step)
 	case model.StepProcess:
 		err = runProcess(e.ctx, step)
 		e.emit("log", step.ID, step.Name, fmt.Sprintf("内置处理: %s", step.Op))

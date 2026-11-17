@@ -6,10 +6,11 @@
 
 - **可视化配置**：左侧步骤列表可勾选启用、上下排序、删除；**全局变量可视化编辑（增/改/删）**；中间按步骤类型显示表单。
 - **执行可视化**：底部三视图切换 —— **日志 / 结果表 / 变量**。结果表用原生表格展示提取的数组数据（可选数据源、列排序、刷新）；变量视图列出全部运行时变量。
-- **可配置顺序步骤**：`request / branch / switch / loop / parallel / process / script / assert / export` 九种步骤自由编排。
+- **可配置顺序步骤**：`request / branch / switch / loop / parallel / merge / process / script / assert / export` 十种步骤自由编排。
 - **条件分支（可视化配置）**：`branch` 步骤按条件走不同分支——**变量 + 操作符（大于/小于/等于/包含/为空…）+ 值** 下拉拼装，支持 and/or 组合与嵌套；条件成立执行 then、否则执行 else，各分支内可放请求/脚本/处理子步骤。也可切换高级模式直接写 `{{amount}} > 0` 表达式。
 - **多分支 switch**：`switch` 步骤配置多个 case，**自上而下匹配第一个满足的 case** 后执行其步骤并跳出，都不满足则走 default。case 条件与 branch 一致（and/or + 中文操作符 / 高级表达式），支持用 ↑/↓ 调整优先级。适合按状态码、等级、类型分发到不同处理流程。
-- **并行结果汇合**：`parallel` 步骤把多个子任务**并发执行**（各自独立变量沙箱、共享会话），全部完成后按 `array / object / table / concat` 方式把各任务产物汇合到一个变量，可直接交给后续步骤或导出。典型用法：并行拉取多个接口/多页数据 → `table` 模式汇成一张表 → 统一导出。任一任务失败默认忽略并继续，可勾选「失败即整体失败」。
+- **扇出（并发）**：`parallel` 步骤把多个子任务**并发执行**（各自独立变量沙箱、共享会话，类似 Go 的 goroutine 扇出），全部完成后按 `array / object / table / concat` 方式把各任务产物汇合到一个变量。同时自动登记每个任务的状态表（见下）。任一任务失败默认忽略并继续，可勾选「失败即整体失败」。
+- **扇入（门控）**：`merge` 步骤作为屏障，**等待上游并行任务全部完成后**用高级表达式检查各任务状态/产物，条件成立才放行后续步骤，否则**中止场景**（类似断言失败）。表达式支持 `&&` / `||` / 比较 / `len` 等函数，可引用 `task.<任务名>.status/output/error/duration` 及 `task.allSuccess/success/failed/total`。由此实现「必须所有并行任务都成功且满足条件，下一步才能开始」的依赖关系。
 - **两种登录态**：Bearer Token 从响应提取到变量后用 `{{token}}` 注入；Cookie 会话由全局 CookieJar 自动跨步骤携带。
 - **循环翻页**：`count`（固定次数）、`foreach`（遍历数组）、`until`（翻到空数据自动停）三种模式，页码变量自动递增。
 - **内置处理 + 自定义脚本**：常用处理逻辑内置；复杂逻辑用 JavaScript（goja）直接处理响应。
@@ -103,7 +104,7 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 
 条件用界面下拉拼装（变量 + 操作符 + 值），支持 **and/or** 多个条件组合；操作符有大于/大于等于/小于/小于等于/等于/不等于/包含/不包含/存在/为空/为真，数值和字符串都能比。多条件用 and/or 组合即可（不必写 `&&`）；若偏好表达式，「高级」框支持单个比较如 `{{amount}} > 0` 或 `{{len(rows)}} == 0`（走 `Eval`）。分支可**嵌套**（分支的 then/else 里再放分支），也可放在 loop 循环体内。完整可运行示例见 `scenarios/branch-demo.json`。
 
-### 常用任务组合组件：switch 与并行汇合
+### 常用任务组合组件：switch 与扇出扇入
 
 当分支多于两个（如按状态码 200/404/500 分流），用 `switch` 更清晰：界面里添加多个 case，每个 case 配条件与子步骤，用 **↑/↓** 调整优先级。执行时**自上而下匹配第一个满足的 case**，命中后执行它的步骤并跳出整个 switch；都不命中则执行 default。case 条件语法与 branch 完全相同（中文操作符 / and/or / 高级表达式）。
 
@@ -120,6 +121,31 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 > 产物顺序按任务配置顺序固定，与实际完成先后无关；任一任务失败默认忽略并继续汇合，勾选 `failFast` 则整体失败。
 
 完整可运行示例见 `scenarios/components-demo.json`（switch 评级 + 并行拉取汇合导出）。
+
+### 扇出 / 扇入（类似 Go 的 fan-out / fan-in）
+
+把 `parallel`（扇出）和 `merge`（扇入）搭配使用，实现「**多个并行任务全部成功且满足条件，下一步才能开始**」的依赖门控：
+
+1. **扇出**：一个 `parallel` 步骤里配多个命名子任务，它们**并发执行**（类似 Go 的 goroutine）。执行完自动登记状态表到变量 `task`（可用 `statusVar` 改名）：
+
+   | 引用 | 含义 |
+   |---|---|
+   | `task.<任务名>.status` | `success` / `fail` |
+   | `task.<任务名>.output` | 该任务产物（按 `var`/`value`） |
+   | `task.<任务名>.error` / `.duration` | 失败原因 / 耗时(ms) |
+   | `task.allSuccess` / `success` / `failed` / `total` | 是否全成功 / 成功数 / 失败数 / 总数 |
+
+2. **扇入**：紧跟一个 `merge` 步骤，在 `when` 里写高级表达式做门控，支持 `&&` / `||` / 比较运算 / `len()` 等函数。表达式为**真**才放行后续步骤，为**假**则报错中止场景。表达式留空默认 `task.allSuccess`。
+
+> 门控表达式示例：
+> - `task.allSuccess` —— 必须全部成功
+> - `task.A.status == "success" && task.B.status == "success"` —— 指定任务都成功
+> - `task.failed == 0 && task.total == 3` —— 三个任务零失败
+> - `task.订单查询.output > 0 && len(task) >= 3` —— 产物条件 + 数量
+
+> 注意：需要扇入裁决时，扇出步骤**不要**勾选 `failFast`（否则某任务失败会直接中止，走不到 merge）；让失败进入状态表，由 merge 表达式决定放行还是中止。
+
+完整可运行示例见 `scenarios/fanin-demo.json`（3 个并发拉取 → 全成功门控 → 导出）。
 
 ## 场景 JSON 格式
 
@@ -161,7 +187,7 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 }
 ```
 
-`scenarios/demo.json`（可直接跑，连 httpbin）、`scenarios/pagination.json`（真实业务模板）、`scenarios/branch-demo.json`（条件分支）、`scenarios/components-demo.json`（switch + 并行汇合）是完整示例。
+`scenarios/demo.json`（可直接跑，连 httpbin）、`scenarios/pagination.json`（真实业务模板）、`scenarios/branch-demo.json`（条件分支）、`scenarios/components-demo.json`（switch + 并行汇合）、`scenarios/fanin-demo.json`（扇出扇入门控）是完整示例。
 
 ## 步骤类型
 
@@ -171,7 +197,8 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 | `branch` | 条件分支 | `branch`（`conditions`+`logic` 或 `when`；`then`/`else` 子步骤） |
 | `switch` | 多分支 | `switch.cases[]`（每个 case 有 `name` `conditions`+`logic` 或 `when` + `steps`）、`switch.default[]` |
 | `loop` | 循环子步骤（翻页） | `loop`（见下表）+ `children` |
-| `parallel` | 并行结果汇合 | `parallel.tasks[]`（`name` `steps` `var`/`value`）、`var` `mode` `separator` `failFast` |
+| `parallel` | 扇出：并行子任务 | `parallel.tasks[]`（`name` `steps` `var`/`value`）、`var` `mode` `separator` `failFast` `statusVar` |
+| `merge` | 扇入：门控屏障 | `merge.when`（高级表达式，不成立即中止；留空默认 `task.allSuccess`） |
 | `process` | 内置数据处理 | `op` + `args` |
 | `script` | 自定义 JS 处理 | `code` |
 | `assert` | 独立断言（针对最近响应） | `assert` |
@@ -204,6 +231,7 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 
 - 变量与路径：`{{token}}`、`{{rows.0.id}}`
 - 比较：`{{len(rows)}} == 0`、`{{page}} >= 3`
+- 逻辑组合：`&&` / `||`（短路求值，引号/括号内的符号不误判），如 `{{task.A.status}} == "success" && {{task.B.status}} == "success"`
 - 内置函数：`len` `empty` `add` `sub` `upper` `lower` `contains` `default` `toint` `tostring` `json`
 - 字面量：`"字符串"`、`123`、`true` / `false`
 

@@ -1,0 +1,89 @@
+{
+  "name": "示例：扇出并发 → 扇入门控 → 导出",
+  "baseUrl": "https://httpbin.org",
+  "variables": {},
+  "steps": [
+    {
+      "id": "1",
+      "name": "扇出：并发拉取三个来源",
+      "type": "parallel",
+      "enabled": true,
+      "parallel": {
+        "mode": "table",
+        "var": "allRows",
+        "statusVar": "task",
+        "tasks": [
+          {
+            "name": "订单查询",
+            "var": "amount",
+            "steps": [
+              {
+                "id": "1a",
+                "name": "拉订单金额",
+                "type": "request",
+                "enabled": true,
+                "method": "GET",
+                "url": "/get?src=order",
+                "extract": [
+                  { "name": "amount", "source": "body", "kind": "jsonpath", "path": "args.src" }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "库存查询",
+            "var": "amount",
+            "steps": [
+              {
+                "id": "1b",
+                "name": "拉库存",
+                "type": "request",
+                "enabled": true,
+                "method": "GET",
+                "url": "/get?src=stock",
+                "extract": [
+                  { "name": "amount", "source": "body", "kind": "jsonpath", "path": "args.src" }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "用户查询",
+            "var": "amount",
+            "steps": [
+              {
+                "id": "1c",
+                "name": "拉用户",
+                "type": "request",
+                "enabled": true,
+                "method": "GET",
+                "url": "/get?src=user",
+                "extract": [
+                  { "name": "amount", "source": "body", "kind": "jsonpath", "path": "args.src" }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "2",
+      "name": "扇入：全部成功才放行",
+      "type": "merge",
+      "enabled": true,
+      "merge": {
+        "when": "task.allSuccess && task.total == 3 && len(task) >= 3"
+      }
+    },
+    {
+      "id": "3",
+      "name": "门控通过后导出",
+      "type": "export",
+      "enabled": true,
+      "from": "allRows",
+      "format": "txt",
+      "path": "result-fanin.txt"
+    }
+  ]
+}
