@@ -36,15 +36,18 @@ go build -o requestflow .
 
 ## 打包（Windows 分发）
 
-默认只打 **Windows / amd64**，一条命令生成可直接分发的 zip（含 exe、README、示例场景、使用说明与 SHA256 校验文件）：
+默认只打 **Windows / amd64**，一条命令生成可直接分发的 **tar.gz**（含带应用图标的 exe、README、示例场景、使用说明与 SHA256 校验文件）：
 
 ```bash
-./pack.sh                       # 默认 windows/amd64 → dist/requestflow-<版本>-windows-amd64.zip
-./pack.sh windows/arm64         # 需要其他平台时显式指定 <goos>/<goarch>
+./pack.sh                       # 默认 windows/amd64 → dist/requestflow-<版本>-windows-amd64.tar.gz
+./pack.sh linux/amd64           # 需要其他平台时显式指定 <goos>/<goarch>
+FORMAT=zip ./pack.sh            # 改用 zip 格式
 VERSION=v2.0.0 ./pack.sh        # CI 中手动指定版本号
 ```
 
 产物在 `dist/`，解压后双击 `requestflow.exe` 即可用 GUI；命令行支持 `-run` / `-version`。版本号由 git tag + commit 自动注入，无需 cgo。
+
+**应用图标**：Windows exe 内嵌品牌图标（`assets/icon.png`，蓝青渐变 + 双节点汇聚成箭头的流程意象，对应扇出/扇入）。打包时若检测到 `go-winres` 会自动生成 `rsrc_windows_amd64.syso` 并链接进 exe；未安装则降级为无图标构建，不影响功能。安装方式：`go install github.com/tc-hib/go-winres@latest`。可用 `go-winres extract requestflow.exe` 查看内嵌图标资源。
 
 ## 版本号
 

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -31,6 +32,7 @@ type App struct {
 	runOK        bool
 	lastResult   *engine.Result
 	currentEng   *engine.Engine
+	engMu        sync.RWMutex // 保护 currentEng 的跨 goroutine 读写
 
 	// 编辑器临时缓冲（避免每帧写入模型）
 	editName   string
@@ -1349,7 +1351,7 @@ func (a *App) statusBar(c *ui.Context, t *ui.Theme) {
 			if a.lastResult.OK {
 				status = fmt.Sprintf("完成 · %d 变量", len(a.lastResult.Vars))
 			} else {
-				status = "失败：" + a.lastResult.Err.Error()
+				status = "失败：" + resultErrText(a.lastResult)
 			}
 		}
 		ui.Text(c, status).FontSize(10).TextColor(t.TextMuted)
@@ -1415,6 +1417,10 @@ func (a *App) appendStep(typ model.StepType) {
 }
 
 func (a *App) moveStep(i, dir int) {
+	// 边界防御：源索引与目录都必须有效。
+	if i < 0 || i >= len(a.scenario.Steps) {
+		return
+	}
 	j := i + dir
 	if j < 0 || j >= len(a.scenario.Steps) {
 		return
@@ -1428,8 +1434,14 @@ func (a *App) moveStep(i, dir int) {
 }
 
 func (a *App) deleteStep(i int) {
+	// 边界防御：无效索引直接忽略，避免切片越界 panic。
+	if i < 0 || i >= len(a.scenario.Steps) {
+		return
+	}
 	a.scenario.Steps = append(a.scenario.Steps[:i], a.scenario.Steps[i+1:]...)
-	if a.selectedStep >= len(a.scenario.Steps) {
+	if len(a.scenario.Steps) == 0 {
+		a.selectedStep = -1
+	} else if a.selectedStep >= len(a.scenario.Steps) {
 		a.selectedStep = len(a.scenario.Steps) - 1
 	}
 }
@@ -1469,14 +1481,28 @@ func (a *App) openScenario() {
 			return
 		}
 		path := paths[0]
-		mygo.RunOnMain(func() {
-			a.scenario = &sc
-			a.filePath = path
-			a.selectedStep = -1
-			a.resetResult()
-			a.log("已打开: " + path)
-		})
+		mygo.RunOnMain(func() { a.applyLoadedScenario(&sc, path) })
 	}()
+}
+
+// applyLoadedScenario 统一应用外部载入的场景，保证各项状态一致、无半初始化。
+func (a *App) applyLoadedScenario(sc *model.Scenario, path string) {
+	if sc == nil {
+		sc = model.NewScenario("空场景")
+	}
+	if sc.Variables == nil {
+		sc.Variables = map[string]string{}
+	}
+	if sc.Steps == nil {
+		sc.Steps = []model.Step{}
+	}
+	a.scenario = sc
+	a.filePath = path
+	a.selectedStep = -1
+	a.adding = false
+	a.showImport = false
+	a.resetResult()
+	a.log("已打开: " + path)
 }
 
 func (a *App) saveScenario() {
@@ -1530,25 +1556,54 @@ func (a *App) run() {
 			}
 			mygo.RunOnMain(func() { a.log(msg) })
 		})
-		a.currentEng = eng
+		a.setEngine(eng)
 		res := eng.Run()
 		mygo.RunOnMain(func() {
 			a.running = false
-			a.currentEng = nil
+			a.setEngine(nil)
 			a.lastResult = res
 			a.runOK = res.OK
 			if res.OK {
 				a.log("=== 执行成功 ===")
 			} else {
-				a.log("=== 执行失败: " + res.Err.Error() + " ===")
+				a.log("=== 执行失败: " + resultErrText(res) + " ===")
 			}
 		})
 	}()
 }
 
+// setEngine / getEngine 并发安全地访问正在运行的引擎。
+func (a *App) setEngine(eng *engine.Engine) {
+	a.engMu.Lock()
+	a.currentEng = eng
+	a.engMu.Unlock()
+}
+
+func (a *App) getEngine() *engine.Engine {
+	a.engMu.RLock()
+	defer a.engMu.RUnlock()
+	return a.currentEng
+}
+
+// resultErrText 从执行结果安全地取错误文本；Err 为 nil 或结果为 nil 时给出兜底。
+func (a *App) resultErrText(res *engine.Result) string { return resultErrText(res) }
+
+func resultErrText(res *engine.Result) string {
+	if res == nil {
+		return ""
+	}
+	if res.Err != nil {
+		return res.Err.Error()
+	}
+	if !res.OK {
+		return "未知错误"
+	}
+	return ""
+}
+
 func (a *App) stop() {
-	if a.currentEng != nil {
-		a.currentEng.Stop()
+	if eng := a.getEngine(); eng != nil {
+		eng.Stop()
 		a.log("已请求停止（将在当前步骤后中断）")
 	}
 }

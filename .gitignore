@@ -7,6 +7,7 @@
 *.dll
 *.so
 *.dylib
+*.syso
 
 # 运行生成的结果文件
 result.txt

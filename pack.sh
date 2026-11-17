@@ -9,7 +9,8 @@
 #   OUT=/path/to/dist ./pack.sh        # 指定输出目录
 #
 # 产物: <OUT>/requestflow-<版本>-<平台>.tar.gz
-#   内含: requestflow(.exe) · README.md · scenarios/ 示例场景
+#   内含: requestflow(.exe，含应用图标) · README.md · scenarios/ 示例场景
+# Windows 图标来自 assets/icon.png，经 go-winres 生成 rsrc_windows_amd64.syso 自动链接。
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -51,13 +52,35 @@ STAGE="$OUT/$PKG"
 rm -rf "$STAGE"
 mkdir -p "$STAGE/scenarios"
 
+# ---------- Windows 图标资源（go-winres 生成 .syso，go build 自动链接）----------
+# syso 仅对 windows/amd64 生效；其他平台不生成、不链接。
+if [[ "$GOOS_T" == "windows" && "$GOARCH_T" == "amd64" ]]; then
+  rm -f rsrc_windows_*.syso
+  if command -v go-winres >/dev/null 2>&1 || [[ -x "$(go env GOPATH)/bin/go-winres" ]]; then
+    WINRES="$(go env GOPATH)/bin/go-winres"
+    [[ -x "$WINRES" ]] || WINRES="go-winres"
+    "$WINRES" simply --icon assets/icon.png --arch amd64 --out rsrc \
+      --manifest gui --product-name "RequestFlow" \
+      --file-description "HTTP 流程自动化工具" \
+      --file-version "${ver#v}" --product-version "${ver#v}" >/dev/null 2>&1 \
+      && echo "图标资源: 已生成 rsrc_windows_amd64.syso" \
+      || echo "图标资源: go-winres 生成失败，使用无图标构建"
+  else
+    echo "图标资源: 未安装 go-winres，使用无图标构建（可 go install github.com/tc-hib/go-winres@latest）"
+  fi
+fi
+
 # ---------- 交叉编译（注入版本，无 cgo）----------
+# 保留控制台子系统，-run/-version 等 CLI 输出可见；图标已通过 .syso 注入。
 CGO_ENABLED=0 GOOS="$GOOS_T" GOARCH="$GOARCH_T" go build -trimpath -ldflags "\
   -s -w \
   -X requestflow/version.Version=${ver} \
   -X requestflow/version.Commit=${commit} \
   -X requestflow/version.BuildTime=${build_time}" \
   -o "$STAGE/$BIN" .
+
+# 清理生成的 syso，保持工作区干净
+rm -f rsrc_windows_*.syso
 
 # ---------- 附带文档与示例 ----------
 cp README.md "$STAGE/"

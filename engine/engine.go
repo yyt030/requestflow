@@ -48,6 +48,10 @@ type Engine struct {
 
 func NewEngine(sc *model.Scenario, onEvent func(Event)) *Engine {
 	timeout := 30 * time.Second
+	// nil 场景防御：界面在打开/新建的过渡态可能传入 nil，避免解引用 panic。
+	if sc == nil {
+		sc = &model.Scenario{Name: "空场景"}
+	}
 	return &Engine{
 		scenario: sc,
 		ctx:      NewContext(sc.Variables),
