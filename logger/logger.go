@@ -1,5 +1,6 @@
 // Package logger 提供 RequestFlow 的默认运行日志：无论 GUI 还是无界面模式，
-// 日常运行都会把关键事件追加写入用户可写目录下的日志文件，便于事后排查。
+// 日常运行都会把关键事件追加写入可执行文件同目录的日志文件，便于绿色部署与事后排查。
+// 若 exe 同目录不可写（如装在 Program Files），则自动退回用户配置目录。
 package logger
 
 import (
@@ -18,42 +19,56 @@ var (
 	enabled = true
 )
 
-// Init 初始化日志。若 dir 非空则写入该目录，否则自动选择：
-//   - 优先 %APPDATA%/RequestFlow/logs（Windows）或 ~/.config/requestflow/logs（Linux/macOS）
-//   - 用户配置目录不可用时退回到可执行文件同目录的 logs/
-//
+// Init 初始化日志。若 dir 非空则写入该目录；否则默认写可执行文件同目录
+// （绿色部署，日志与 exe 放一起）。若 exe 同目录不可写（如装在 Program Files），
+// 自动退回用户配置目录 %APPDATA%/requestflow/logs（Windows）或 ~/.config/requestflow/logs。
 // 初始化失败不会致命，仅关闭文件日志，GUI/CLI 仍可正常运行。
 func Init(dir string) {
 	mu.Lock()
 	defer mu.Unlock()
-	if dir == "" {
-		dir = defaultDir()
+
+	var candidates []string
+	if dir != "" {
+		candidates = []string{dir}
+	} else {
+		candidates = defaultDirs()
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		enabled = false
+	for _, d := range candidates {
+		if d == "" {
+			continue
+		}
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			continue
+		}
+		p := filepath.Join(d, "requestflow.log")
+		f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			continue
+		}
+		file = f
+		logPath = p
+		// 记录本次启动，日志跨会话可区分。
+		fmt.Fprintf(file, "[%s] ==== 日志开始 (PID %d) ====\n", now(), os.Getpid())
 		return
 	}
-	p := filepath.Join(dir, "requestflow.log")
-	f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		enabled = false
-		return
-	}
-	file = f
-	logPath = p
-	// 记录本次启动，日志跨会话可区分。
-	fmt.Fprintf(file, "[%s] ==== 日志开始 (PID %d) ====\n", now(), os.Getpid())
+	enabled = false
 }
 
-// defaultDir 返回默认日志目录。
-func defaultDir() string {
+// defaultDirs 返回候选日志目录，按优先级排列：
+//  1. 可执行文件同目录（默认，绿色部署）
+//  2. 用户配置目录（exe 同目录不可写时的降级）
+func defaultDirs() []string {
+	var dirs []string
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		dirs = append(dirs, filepath.Dir(exe))
+	}
 	if base, err := os.UserConfigDir(); err == nil && base != "" {
-		return filepath.Join(base, "requestflow", "logs")
+		dirs = append(dirs, filepath.Join(base, "requestflow", "logs"))
 	}
-	if exe, err := os.Executable(); err == nil {
-		return filepath.Join(filepath.Dir(exe), "logs")
+	if len(dirs) == 0 {
+		dirs = []string{"logs"}
 	}
-	return "logs"
+	return dirs
 }
 
 // Path 返回当前日志文件路径，未启用时返回空串。

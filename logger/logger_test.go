@@ -31,6 +31,34 @@ func TestLogWritesToFile(t *testing.T) {
 	}
 }
 
+func TestDefaultDirPrefersExeDir(t *testing.T) {
+	dirs := defaultDirs()
+	if len(dirs) == 0 {
+		t.Fatal("defaultDirs() 不应为空")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable 失败: %v", err)
+	}
+	want := filepath.Dir(exe)
+	if dirs[0] != want {
+		t.Fatalf("首选日志目录应为 exe 同目录 %q, got %q", want, dirs[0])
+	}
+	// 用户配置目录作为降级候选应排在后面（若可取到）。
+	if base, err := os.UserConfigDir(); err == nil && base != "" {
+		fallback := filepath.Join(base, "requestflow", "logs")
+		found := false
+		for _, d := range dirs[1:] {
+			if d == fallback {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("缺少降级目录 %q, dirs=%v", fallback, dirs)
+		}
+	}
+}
+
 func TestAppendAcrossSessions(t *testing.T) {
 	dir := t.TempDir()
 	Init(dir)
