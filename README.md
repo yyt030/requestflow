@@ -13,7 +13,7 @@
 - **扇入（门控）**：`merge` 步骤作为屏障，**等待上游并行任务全部完成后**用高级表达式检查各任务状态/产物，条件成立才放行后续步骤，否则**中止场景**（类似断言失败）。表达式支持 `&&` / `||` / 比较 / `len` 等函数，可引用 `task.<任务名>.status/output/error/duration` 及 `task.allSuccess/success/failed/total`。由此实现「必须所有并行任务都成功且满足条件，下一步才能开始」的依赖关系。
 - **两种登录态**：Bearer Token 从响应提取到变量后用 `{{token}}` 注入；Cookie 会话由全局 CookieJar 自动跨步骤携带。
 - **循环翻页**：`count`（固定次数）、`foreach`（遍历数组）、`until`（翻到空数据自动停）三种模式，页码变量自动递增。
-- **内置处理 + 自定义脚本**：常用处理逻辑内置；复杂逻辑用 JavaScript（goja）直接处理响应。
+- **内置处理 + 自定义脚本**：常用处理逻辑内置；复杂逻辑用脚本直接处理响应，支持 **JavaScript（goja）与 Python（Starlark 子集）双引擎**，编辑器内一键切换。
 - **多格式导出**：xlsx / csv / txt / json。
 - **从 Chrome 一键导入 cURL**：DevTools 中右键请求 → Copy as cURL，粘贴后一键解析成请求步骤，自动识别 Bearer Token、Cookie、查询参数与请求体，支持 bash / cmd / PowerShell 三种格式。
 - **接口调试**：工具栏「⚡ 接口调试」打开独立调试面板，单独发送请求即时查看响应，无需运行整个场景。支持 method/url/headers/query/body/认证/超时/TLS；响应区分「响应体 / 响应头 / Cookie / cURL」四视图，JSON 自动美化，显示状态码、耗时、字节数。request 步骤编辑器里还有「⚡ 试发送此请求」按钮，用当前步骤配置（含 `{{变量}}` 渲染）直接调试；调试响应可一键反向生成 cURL 并导回场景。
@@ -80,7 +80,7 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 ┌─ UI 层 (mygo ui) ── 场景/步骤列表 · 步骤编辑器 · 执行日志 ─┐
 ├─ 控制层 ── 配置加载/保存(JSON) · 执行调度 · 状态显示 ──────┤
 ├─ 执行引擎 ─ 变量上下文 · HTTP执行 · 提取/断言 · 循环 · 处理 · JS脚本 ┤
-└─ 基础设施 ─ net/http+CookieJar · excelize · gjson · goja ───┘
+└─ 基础设施 ─ net/http+CookieJar · excelize · gjson · goja · starlark ┘
 ```
 
 **一个场景 = 一个 JSON 文件**，步骤按顺序执行，步骤间通过变量上下文传递数据。源码分层：`model/`（数据模型）、`engine/`（执行引擎，含单元测试）、`ui/`（界面）。
@@ -206,7 +206,7 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 | `parallel` | 扇出：并行子任务 | `parallel.tasks[]`（`name` `steps` `var`/`value`）、`var` `mode` `separator` `failFast` `statusVar` |
 | `merge` | 扇入：门控屏障 | `merge.when`（高级表达式，不成立即中止；留空默认 `task.allSuccess`） |
 | `process` | 内置数据处理 | `op` + `args` |
-| `script` | 自定义 JS 处理 | `code` |
+| `script` | 自定义脚本（JS/Python） | `scriptLang`、`code` |
 | `assert` | 独立断言（针对最近响应） | `assert` |
 | `export` | 导出结果 | `from` `format` `path` |
 
@@ -259,12 +259,14 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 
 ## 自定义脚本（script）
 
-用 JavaScript（goja，纯 Go 引擎）处理响应。注入对象：
+脚本步骤支持 **JavaScript 与 Python 双引擎**，在编辑器的「语言」下拉切换；默认 `js`，已有场景无需改动。两个引擎注入同样的对象：
 
 - `vars`：全部运行时变量，可读写（改动自动写回）
 - `last`：最近一次响应 `{ status, body, json, headers }`
 - `log(...)`：输出到控制台
-- `JSON.stringify` / `JSON.parse`
+- `JSON.stringify` / `JSON.parse`：JSON 编解码
+
+### JavaScript（goja，纯 Go 引擎）
 
 ```js
 var data = last.json.data.list;
@@ -272,6 +274,19 @@ vars.rows = data.filter(function(x){ return x.amount > 100; });
 vars.total = data.length;
 log("共 " + vars.total + " 条");
 ```
+
+### Python（Starlark 子集，纯 Go 无 cgo）
+
+用 `scriptLang: "python"` 启用。语法是 Python 子集（Bazel 同款），支持变量、`if/else`、函数、列表/字典、列表推导、`for`（需写在函数内）、常用内置（`len/range/str/int/sum/any/all/abs` 等）与 `",".join(...)`。变量用 `vars["k"]` 读写。
+
+```python
+vars["token"] = last["json"]["data"]["token"]
+names = ["a", "b", "c"]
+vars["joined"] = ",".join([n.upper() for n in names])
+log("joined=", vars["joined"])
+```
+
+> **差异提示**：Starlark 不是完整 CPython——顶层不能直接写 `for`（放进函数再调用），不支持 `while` / `try` / `class`，标准库有限。需要完整 Python 语法请改用 JS 引擎或内置处理步骤。选 Python 是为了保持单二进制、无 cgo（完整 CPython 需链接 libpython，破坏 Windows 绿色打包）。
 
 ## 测试
 
@@ -281,9 +296,9 @@ go test ./engine -run TestRegression -v  # 只跑端到端回归案例
 go test -race ./...                    # 竞态检测
 ```
 
-单元测试已覆盖：登录提取 Token + Bearer 注入、Cookie 会话、循环翻页终止、脚本写变量 + 导出、表达式求值、表格构建、变量增删改、版本信息格式化。
+单元测试已覆盖：登录提取 Token + Bearer 注入、Cookie 会话、循环翻页终止、脚本写变量 + 导出、表达式求值、表格构建、变量增删改、版本信息格式化，以及 **Python 引擎**（变量读写、函数/推导、`any/all/abs`、JSON、顶层 for 报错、JS 兼容回退）。
 
-**端到端回归案例**（`engine/regression_test.go` + `engine/testdata/regression-scenario.json`）：用 `httptest` 起本地服务（无需外网、不依赖固定端口），从 JSON 加载完整场景并运行，覆盖「登录提取 → 携带 Token 鉴权请求 → 状态/JSONPath 断言 → 条件分支 → 循环翻页 → JS 脚本 → 导出」，校验关键变量与导出文件内容；另含分支 else 路径用例。场景中的 `{{BASE}}`/`{{OUT}}` 占位符在测试时替换为实际服务地址与临时输出路径，与 GUI/CLI 打开场景的加载路径一致。新增功能后跑一遍 `go test ./...` 即可回归。
+**端到端回归案例**（`engine/regression_test.go` + `engine/testdata/`）：用 `httptest` 起本地服务（无需外网、不依赖固定端口），从 JSON 加载完整场景并运行，覆盖「登录提取 → 携带 Token 鉴权请求 → 状态/JSONPath 断言 → 条件分支 → 循环翻页 → JS 脚本 → 导出」，校验关键变量与导出文件内容；另含分支 else 路径，以及 Python 脚本场景（`regression-python-scenario.json`：脚本写回变量被后续步骤渲染与断言使用）。场景中的 `{{BASE}}`/`{{OUT}}` 占位符在测试时替换为实际服务地址与临时输出路径，与 GUI/CLI 打开场景的加载路径一致。新增功能后跑一遍 `go test ./...` 即可回归。
 
 ## 目录
 
@@ -292,7 +307,7 @@ main.go            入口（GUI / -run 无界面 / -version），启动时初始
 console_windows.go Windows 平台：GUI 模式隐藏控制台黑框（build tag）
 console_other.go   非 Windows 平台的空实现（build tag）
 model/model.go     数据模型
-engine/            执行引擎 + cURL 解析器 + 接口调试 + 单元测试 + 端到端回归测试
+engine/            执行引擎 + cURL 解析器 + 接口调试 + JS/Python 双脚本引擎 + 单元测试 + 端到端回归测试
 engine/testdata/   回归场景 JSON（占位符 BASE/OUT 运行时替换）
 logger/            默认文件日志（GUI/无界面共用）+ 单元测试
 ui/app.go          mygo 原生界面（步骤选中/双击调试/日志落盘）

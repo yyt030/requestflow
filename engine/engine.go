@@ -126,7 +126,11 @@ func (e *Engine) runStep(step model.Step, depth int) error {
 		err = runProcess(e.ctx, step)
 		e.emit("log", step.ID, step.Name, fmt.Sprintf("内置处理: %s", step.Op))
 	case model.StepScript:
-		err = runScript(e.ctx, step, e.lastResp)
+		if strings.EqualFold(step.ScriptLang, "python") || strings.EqualFold(step.ScriptLang, "py") {
+			err = runPythonScript(e.ctx, step, e.lastResp)
+		} else {
+			err = runScript(e.ctx, step, e.lastResp)
+		}
 		e.emit("log", step.ID, step.Name, "自定义脚本已执行")
 	case model.StepExport:
 		var path string

@@ -152,3 +152,34 @@ func TestRegression_BranchElsePath(t *testing.T) {
 		t.Errorf("resultPage = %v, 期望 warning（应走 else 分支）", got)
 	}
 }
+
+// TestRegression_PythonScript 端到端回归：从 JSON 加载含 Python 脚本步骤的场景，
+// 验证脚本写回的变量能被后续步骤的 {{变量}} 渲染与断言使用。
+func TestRegression_PythonScript(t *testing.T) {
+	srv := regressionServer()
+	defer srv.Close()
+
+	data, err := os.ReadFile(filepath.Join("testdata", "regression-python-scenario.json"))
+	if err != nil {
+		t.Fatalf("读取 Python 回归场景失败: %v", err)
+	}
+	s := strings.ReplaceAll(string(data), "{{BASE}}", srv.URL)
+	var sc model.Scenario
+	if err := json.Unmarshal([]byte(s), &sc); err != nil {
+		t.Fatalf("解析 Python 回归场景失败: %v", err)
+	}
+
+	res := NewEngine(&sc, nil).Run()
+	if !res.OK {
+		t.Fatalf("Python 回归场景执行失败: %v", res.Err)
+	}
+	if got := fmtVar(res.Vars["page_num"]); got != "70" {
+		t.Errorf("page_num = %v, 期望 70（脚本 int(page)*10）", res.Vars["page_num"])
+	}
+	if got := fmtVar(res.Vars["names"]); !strings.Contains(got, "A") || !strings.Contains(got, "B") {
+		t.Errorf("names = %v, 期望含大写 A/B", res.Vars["names"])
+	}
+	if got := fmtVar(res.Vars["joined"]); got != "A,B,C" {
+		t.Errorf("joined = %v, 期望 A,B,C", res.Vars["joined"])
+	}
+}

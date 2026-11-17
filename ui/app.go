@@ -1303,9 +1303,25 @@ func (a *App) editorProcess(c *ui.Context, t *ui.Theme, step *model.Step) {
 }
 
 func (a *App) editorScript(c *ui.Context, t *ui.Theme, step *model.Step) {
-	ui.Text(c, "JavaScript（goja）").FontSize(12).Bold()
-	fieldHint(c, t, "可用：vars（读写变量）、last（最近响应 status/body/json）、log()、JSON.stringify/parse。")
-	fieldHint(c, t, "示例：vars.token = last.json.data.token;  log('取到 token');")
+	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, "自定义脚本").FontSize(12).Bold()
+		langs := []string{"js", "python"}
+		lang := step.ScriptLang
+		if lang == "" {
+			lang = "js"
+		}
+		if ui.Select(c, &lang, langs).Label("语言").Changed() {
+			step.ScriptLang = lang
+		}
+	})
+	if strings.EqualFold(step.ScriptLang, "python") || strings.EqualFold(step.ScriptLang, "py") {
+		fieldHint(c, t, "Python（Starlark 子集）：vars[\"k\"] = v 读写变量，last[\"status\"/\"json\"] 取响应，log() 打印。")
+		fieldHint(c, t, "支持 if/for/函数/列表推导；顶层不能直接写 for（放进函数里调用），无 while/try/class。")
+		fieldHint(c, t, "示例：vars[\"token\"] = last[\"json\"][\"data\"][\"token\"];  log(\"取到 token\")")
+	} else {
+		fieldHint(c, t, "JavaScript（goja）：vars（读写变量）、last（最近响应 status/body/json）、log()、JSON.stringify/parse。")
+		fieldHint(c, t, "示例：vars.token = last.json.data.token;  log('取到 token');")
+	}
 	ui.TextArea(c, &step.Code).Height(240)
 }
 

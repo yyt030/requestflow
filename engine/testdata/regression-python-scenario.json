@@ -1,0 +1,44 @@
+{
+  "name": "回归场景：Python 脚本步骤",
+  "baseUrl": "{{BASE}}",
+  "variables": {},
+  "steps": [
+    {
+      "id": "p1",
+      "name": "请求取数",
+      "type": "request",
+      "enabled": true,
+      "method": "GET",
+      "url": "/page?page=7",
+      "extract": [
+        { "name": "page", "source": "body", "kind": "jsonpath", "path": "page" }
+      ]
+    },
+    {
+      "id": "p2",
+      "name": "Python 脚本处理",
+      "type": "script",
+      "enabled": true,
+      "scriptLang": "python",
+      "code": "vars[\"page_num\"] = int(vars[\"page\"]) * 10\nnames = [\"a\", \"b\", \"c\"]\nvars[\"names\"] = [n.upper() for n in names]\nvars[\"joined\"] = \",\".join(vars[\"names\"])\nlog(\"page_num=\", vars[\"page_num\"])"
+    },
+    {
+      "id": "p3",
+      "name": "用脚本结果发请求",
+      "type": "request",
+      "enabled": true,
+      "method": "GET",
+      "url": "/detail?balance={{page_num}}"
+    },
+    {
+      "id": "p4",
+      "name": "断言脚本结果",
+      "type": "assert",
+      "enabled": true,
+      "assert": [
+        { "name": "page_num 正确", "source": "variable", "path": "page_num", "op": "eq", "value": "70" },
+        { "name": "joined 正确", "source": "variable", "path": "joined", "op": "eq", "value": "A,B,C" }
+      ]
+    }
+  ]
+}

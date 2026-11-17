@@ -77,7 +77,8 @@ type Step struct {
 	Args map[string]string `json:"args,omitempty"`
 
 	// --- script 字段 ---
-	Code string `json:"code,omitempty"`
+	ScriptLang string `json:"scriptLang,omitempty"` // js（默认）| python；空值按 js 处理，兼容旧场景
+	Code       string `json:"code,omitempty"`
 
 	// --- export 字段 ---
 	From   string `json:"from,omitempty"`   // 变量名，引用表格数据
