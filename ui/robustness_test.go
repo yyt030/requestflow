@@ -107,6 +107,71 @@ type errString string
 
 func (e errString) Error() string { return string(e) }
 
+// ---------- 双击步骤进入调试：request 载入调试面板，其它类型不误入 ----------
+
+func TestOpenStepDebugRequest(t *testing.T) {
+	a := &App{scenario: model.NewScenario("s"), selectedStep: -1}
+	a.appendStep(model.StepRequest)
+	// 填充一个带完整参数的 request 步骤
+	step := &a.scenario.Steps[0]
+	step.Method = "POST"
+	step.URL = "https://api.example.com/login"
+	step.Headers = map[string]string{"Content-Type": "application/json"}
+	step.Query = map[string]string{"page": "2"}
+	step.Body = `{"u":"x"}`
+
+	a.openStepDebug(0)
+
+	if !a.showDebug {
+		t.Fatal("双击 request 步骤应进入调试面板")
+	}
+	if a.debugMethod != "POST" || a.debugURL != step.URL || a.debugBody != step.Body {
+		t.Fatalf("调试参数未正确载入: method=%q url=%q body=%q", a.debugMethod, a.debugURL, a.debugBody)
+	}
+	if !strings.Contains(a.debugHeaders, "Content-Type = application/json") ||
+		!strings.Contains(a.debugQuery, "page = 2") {
+		t.Fatalf("调试 Header/Query 未载入: %q %q", a.debugHeaders, a.debugQuery)
+	}
+	if a.debugResult != nil {
+		t.Fatal("仅载入不应自动发送请求（debugResult 应为空）")
+	}
+}
+
+func TestOpenStepDebugNonRequest(t *testing.T) {
+	a := &App{scenario: model.NewScenario("s"), selectedStep: -1}
+	a.appendStep(model.StepLoop)
+	a.showDebug = true // 预设处于调试视图
+
+	a.openStepDebug(0)
+
+	if a.showDebug {
+		t.Fatal("双击非 request 步骤不应停留在调试面板")
+	}
+	if a.selectedStep != 0 {
+		t.Fatalf("双击应选中该步骤, got %d", a.selectedStep)
+	}
+}
+
+func TestLoadStepToDebugDefaults(t *testing.T) {
+	a := &App{scenario: model.NewScenario("s"), selectedStep: -1}
+	a.appendStep(model.StepRequest)
+	step := &a.scenario.Steps[0]
+	step.Method = "" // 空方法应默认 GET
+	step.AuthType = ""
+
+	a.loadStepToDebug(step)
+
+	if a.debugMethod != "GET" {
+		t.Fatalf("空方法应默认 GET, got %q", a.debugMethod)
+	}
+	if a.debugAuthType != "none" {
+		t.Fatalf("空认证应默认 none, got %q", a.debugAuthType)
+	}
+	if a.debugTimeout != "30" {
+		t.Fatalf("超时应默认 30, got %q", a.debugTimeout)
+	}
+}
+
 // ---------- currentEng 并发访问：不应有数据竞争（-race 下验证）----------
 
 func TestCurrentEngConcurrentAccess(t *testing.T) {

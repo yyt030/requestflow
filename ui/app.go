@@ -16,6 +16,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"requestflow/engine"
+	"requestflow/logger"
 	"requestflow/model"
 	"requestflow/version"
 )
@@ -180,12 +181,16 @@ func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
 // Dialog.Message 会阻塞，因此放到独立 goroutine 中调用。
 func (a *App) showAbout() {
 	go func() {
+		detail := version.Detail()
+		if p := logger.Path(); p != "" {
+			detail += "\n\n日志文件:\n" + p
+		}
 		_, _ = mygo.Dialog.Message(mygo.MessageOptions{
 			Parent:  a.win,
 			Type:    mygo.MessageInfo,
 			Title:   "关于 RequestFlow",
 			Message: version.String(),
-			Detail:  version.Detail(),
+			Detail:  detail,
 			Buttons: []string{"确定"},
 		})
 	}()
@@ -308,27 +313,33 @@ func (a *App) stepList(c *ui.Context, t *ui.Theme) {
 	for i := range steps {
 		idx := i
 		selected := idx == a.selectedStep
-		ui.Row(c.Key(fmt.Sprintf("step-%d", idx))).Gap(6).Padding(6, 8).Radius(6).
-			Background(map[bool]ui.Color{true: t.Accent, false: ui.Color{}}[selected]).
-			Children(func() {
-				ui.Checkbox(c, &a.scenario.Steps[idx].Enabled, "")
-				b := ui.Button(c, a.stepLabel(steps[idx])).Grow(1)
-				if selected {
-					b.TextColor(t.AccentText)
-				}
-				if b.Clicked() {
-					a.selectStep(idx)
-				}
-				if ui.Button(c.Key("up"), "↑").Width(28).Disabled(idx == 0).Clicked() {
-					a.moveStep(idx, -1)
-				}
-				if ui.Button(c.Key("dn"), "↓").Width(28).Disabled(idx == len(steps)-1).Clicked() {
-					a.moveStep(idx, 1)
-				}
-				if ui.Button(c.Key("del"), "×").Width(28).Clicked() {
-					a.deleteStep(idx)
-				}
-			})
+		ui.Row(c.Key(fmt.Sprintf("step-%d", idx))).Gap(6).Padding(4, 6).Radius(6).Children(func() {
+			// 选中态：按钮自身用淡蓝底 + 蓝色加粗标题。
+			// 不用整行 Accent 深蓝底配白字——mygo 的 Button 自带浅色 Surface 背景，
+			// 白字落在浅底上会看不清；淡蓝底 + 深蓝字既醒目又保证对比度。
+			b := ui.Button(c, a.stepLabel(steps[idx])).Grow(1).
+				Tooltip("单击选中并配置；双击进入调试")
+			if selected {
+				b = b.Background(t.Accent.Mix(t.Surface, 0.86)).TextColor(t.Accent).Bold()
+			}
+			if b.Clicked() {
+				a.selectStep(idx)
+			}
+			if b.DoubleClicked() {
+				a.selectStep(idx)
+				a.openStepDebug(idx)
+			}
+			ui.Checkbox(c, &a.scenario.Steps[idx].Enabled, "")
+			if ui.Button(c.Key("up"), "↑").Width(26).Disabled(idx == 0).Clicked() {
+				a.moveStep(idx, -1)
+			}
+			if ui.Button(c.Key("dn"), "↓").Width(26).Disabled(idx == len(steps)-1).Clicked() {
+				a.moveStep(idx, 1)
+			}
+			if ui.Button(c.Key("del"), "×").Width(26).Clicked() {
+				a.deleteStep(idx)
+			}
+		})
 	}
 }
 
@@ -565,8 +576,8 @@ func (a *App) doDebugSend() {
 	}()
 }
 
-// debugStep 把某个 request 步骤载入调试面板并发送。
-func (a *App) debugStep(step *model.Step) {
+// loadStepToDebug 把某个 request 步骤载入调试面板（仅填充，不发送），供双击步骤时查看与编辑。
+func (a *App) loadStepToDebug(step *model.Step) {
 	a.debugMethod = step.Method
 	if a.debugMethod == "" {
 		a.debugMethod = "GET"
@@ -582,9 +593,15 @@ func (a *App) debugStep(step *model.Step) {
 	a.debugAuthToken = step.AuthToken
 	a.debugUser = step.AuthUser
 	a.debugPass = step.AuthPass
+	a.debugTimeout = "30"
 	a.showDebug = true
 	a.debugResult = nil
 	a.debugView = 0
+}
+
+// debugStep 把某个 request 步骤载入调试面板并立即发送。
+func (a *App) debugStep(step *model.Step) {
+	a.loadStepToDebug(step)
 	a.doDebugSend()
 }
 
@@ -1414,6 +1431,8 @@ func (a *App) log(s string) {
 	if len(a.logs) > 500 {
 		a.logs = a.logs[len(a.logs)-500:]
 	}
+	// 同步落盘，日常运行的关键事件（打开/保存/执行/调试等）均可在日志文件中回看。
+	logger.Printf("%s", s)
 	win := a.win
 	if win != nil {
 		win.Invalidate()
@@ -1429,6 +1448,22 @@ func (a *App) selectStep(i int) {
 
 func (a *App) selectStepNoSync(i int) {
 	a.selectedStep = i
+}
+
+// openStepDebug 双击步骤时进入调试：HTTP 请求步骤载入调试面板供查看/编辑/发送；
+// 其它类型保持选中并在右侧显示其配置详情，同时给出说明。
+func (a *App) openStepDebug(i int) {
+	if i < 0 || i >= len(a.scenario.Steps) {
+		return
+	}
+	step := &a.scenario.Steps[i]
+	if step.Type == model.StepRequest {
+		a.loadStepToDebug(step)
+		a.log("已载入调试: " + a.stepLabel(*step) + "（可编辑后点【发送】，不自动请求）")
+	} else {
+		a.showDebug = false
+		a.log("已选中 " + a.stepLabel(*step) + "，配置详情显示在右侧编辑区")
+	}
 }
 
 func (a *App) appendStep(typ model.StepType) {

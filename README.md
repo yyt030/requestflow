@@ -19,6 +19,9 @@
 - **接口调试**：工具栏「⚡ 接口调试」打开独立调试面板，单独发送请求即时查看响应，无需运行整个场景。支持 method/url/headers/query/body/认证/超时/TLS；响应区分「响应体 / 响应头 / Cookie / cURL」四视图，JSON 自动美化，显示状态码、耗时、字节数。request 步骤编辑器里还有「⚡ 试发送此请求」按钮，用当前步骤配置（含 `{{变量}}` 渲染）直接调试；调试响应可一键反向生成 cURL 并导回场景。
 - **类似自动化测试**：每步可配断言（状态码 / JSONPath / 文本包含 / 变量比较），失败即中止，也可设「失败后继续」。
 - **无界面模式**：`requestflow -run scenario.json` 便于 CI / 命令行跑批。
+- **默认运行日志**：GUI 与无界面模式的日常运行都会自动写日志文件（打开/保存/执行/调试等关键事件），无需手动开启。默认位于用户配置目录（Windows：`%APPDATA%/requestflow/logs/requestflow.log`；Linux/macOS：`~/.config/requestflow/logs/requestflow.log`），可用 `-logdir` 指定其它目录；「ⓘ 版本」对话框中也显示当前日志路径。
+- **步骤列表交互**：单击步骤选中并在右侧显示配置详情；**双击** HTTP 请求步骤直接进入调试面板（自动载入该步骤的方法/URL/参数，不自动发送，编辑后点「发送」即可）；选中态采用淡蓝高亮 + 蓝色加粗标题，保证清晰可读。
+- **Windows 无黑框**：双击 `requestflow.exe` 启动 GUI 时不再弹出 cmd 控制台窗口；命令行模式（`-version`/`-run`）的输出仍然正常显示。
 
 ## 环境要求
 
@@ -281,11 +284,15 @@ go test ./...       # 全部包（engine / ui / version）
 ## 目录
 
 ```
-main.go            入口（GUI / -run 无界面 / -version）
+main.go            入口（GUI / -run 无界面 / -version），启动时初始化日志
+console_windows.go Windows 平台：GUI 模式隐藏控制台黑框（build tag）
+console_other.go   非 Windows 平台的空实现（build tag）
 model/model.go     数据模型
 engine/            执行引擎 + cURL 解析器 + 接口调试 + 单元测试
-ui/app.go          mygo 原生界面
+logger/            默认文件日志（GUI/无界面共用）+ 单元测试
+ui/app.go          mygo 原生界面（步骤选中/双击调试/日志落盘）
 version/version.go 版本信息（构建期注入）+ 单元测试
 build.sh           自动注入版本号的构建脚本
+pack.sh            打包脚本（默认 windows/amd64，tar.gz + 图标 + sha256）
 scenarios/         示例场景
 ```
