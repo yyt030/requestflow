@@ -370,6 +370,7 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 		if a.selectedStep < 0 || a.selectedStep >= len(a.scenario.Steps) {
 			ui.Column(c).Fill().Center().Gap(8).Children(func() {
 				ui.Text(c, "选择一个步骤进行配置").FontSize(15).Bold().TextColor(t.TextMuted)
+				ui.Text(c, "单击左侧步骤查看配置，双击请求步骤进入调试").FontSize(11).TextColor(t.TextMuted)
 				ui.Text(c, "内置：登录提取、HTTP 请求、循环翻页、数据处理、JS 脚本、断言、导出").FontSize(11).TextColor(t.TextMuted)
 			})
 			return
@@ -378,14 +379,12 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 		ui.Scroll(c).Grow(1).Padding(14).Gap(10).Children(func() {
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "步骤配置").FontSize(14).Bold()
-				ui.Spacer(c)
 				ui.Text(c, string(step.Type)).FontSize(11).TextColor(t.Accent)
-			})
-			ui.TextInput(c, &step.Name).Label("步骤名称")
-			ui.Row(c).Gap(10).Children(func() {
-				ui.Checkbox(c, &step.Enabled, "启用此步骤")
+				ui.Spacer(c)
+				ui.Checkbox(c, &step.Enabled, "启用")
 				ui.Checkbox(c, &step.ContinueOnFail, "失败后继续")
 			})
+			ui.TextInput(c, &step.Name).Placeholder("给步骤起个名字，便于识别").Label("步骤名称")
 			ui.Divider(c)
 			switch step.Type {
 			case model.StepRequest:
@@ -676,6 +675,12 @@ func clampHeight(v, min, max float32) float32 {
 	return v
 }
 
+// fieldHint 在字段下方渲染一行浅灰色注释，说明该字段的用途或格式。
+// 组件配置统一用它给出填写指引，降低界面配置的学习成本。
+func fieldHint(c *ui.Context, t *ui.Theme, text string) {
+	ui.Text(c, "  ⓘ "+text).FontSize(10).TextColor(t.TextMuted)
+}
+
 // resizableTextArea 渲染一个可拖拽调整高度的多行文本框。
 // 手柄位于文本框正下方，鼠标悬停显示上下调整光标，上下拖动即改变高度。
 // height 指向 App 中保存该文本框高度的变量；min/max 限制避免缩到不可用或撑满屏幕。
@@ -709,27 +714,46 @@ func previewURL(u string) string {
 
 func (a *App) editorRequest(c *ui.Context, t *ui.Theme, step *model.Step) {
 	ui.Text(c, "请求").FontSize(12).Bold()
+	fieldHint(c, t, "发送一个 HTTP 请求；响应可提取为变量、供后续步骤使用。URL 与字段均支持 {{变量名}}。")
 	methods := []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
 	method := step.Method
 	if method == "" {
 		method = "GET"
 	}
-	if ui.Select(c, &method, methods).Label("方法").Changed() {
-		step.Method = method
-	}
-	ui.TextInput(c, &step.URL).Placeholder("{{baseUrl}}/path 或完整 URL").Label("URL")
-	ui.Text(c, "请求头 Headers（每行 key: value，支持 {{变量}}）").FontSize(10).TextColor(t.TextMuted)
-	headerText := mapToString(step.Headers)
-	if ui.TextArea(c, &headerText).Height(70).Changed() {
-		step.Headers = stringToMap(headerText, ":")
-	}
-	ui.Text(c, "查询参数 Query（每行 key: value）").FontSize(10).TextColor(t.TextMuted)
-	queryText := mapToString(step.Query)
-	if ui.TextArea(c, &queryText).Height(70).Changed() {
-		step.Query = stringToMap(queryText, ":")
-	}
-	ui.Text(c, "请求体 Body（支持 {{变量}}）").FontSize(10).TextColor(t.TextMuted)
-	ui.TextArea(c, &step.Body).Height(100)
+	// 方法与 URL 同一行：方法短，不必各占一列。
+	ui.Row(c).Gap(8).Children(func() {
+		if ui.Select(c, &method, methods).Label("方法").Width(110).Changed() {
+			step.Method = method
+		}
+		ui.TextInput(c, &step.URL).Placeholder("{{baseUrl}}/path 或完整 URL").Label("URL").Grow(1)
+	})
+	fieldHint(c, t, "相对路径自动拼接场景 Base URL；写完整 http(s):// 则忽略 Base URL。")
+
+	// Headers 与 Query 并排两列：都是短小的 key=value 列表。
+	ui.Row(c).Gap(10).Children(func() {
+		ui.Column(c).Grow(1).Children(func() {
+			ui.Text(c, "请求头 Headers").FontSize(11).Bold()
+			fieldHint(c, t, "每行 key: value，如 Authorization: Bearer {{token}}")
+			headerText := mapToString(step.Headers)
+			if ui.TextArea(c, &headerText).Height(64).Changed() {
+				step.Headers = stringToMap(headerText, ":")
+			}
+		})
+		ui.Column(c).Grow(1).Children(func() {
+			ui.Text(c, "查询参数 Query").FontSize(11).Bold()
+			fieldHint(c, t, "每行 key: value，如 page: {{page}}，自动拼到 URL")
+			queryText := mapToString(step.Query)
+			if ui.TextArea(c, &queryText).Height(64).Changed() {
+				step.Query = stringToMap(queryText, ":")
+			}
+		})
+	})
+
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, "请求体 Body").FontSize(11).Bold()
+	})
+	fieldHint(c, t, "支持 {{变量}}；GET 通常留空，POST/PUT 填写 JSON 或表单文本。")
+	ui.TextArea(c, &step.Body).Height(90)
 
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		if ui.Button(c, "⚡ 试发送此请求").Clicked() {
@@ -740,20 +764,24 @@ func (a *App) editorRequest(c *ui.Context, t *ui.Theme, step *model.Step) {
 
 	ui.Divider(c)
 	ui.Text(c, "认证").FontSize(12).Bold()
+	fieldHint(c, t, "为当前请求注入鉴权信息；none 表示不认证。")
 	authTypes := []string{"none", "bearer", "basic"}
 	at := step.AuthType
 	if at == "" {
 		at = "none"
 	}
-	if ui.Select(c, &at, authTypes).Label("类型").Changed() {
-		step.AuthType = at
-	}
-	if at == "bearer" {
-		ui.TextInput(c, &step.AuthToken).Placeholder("{{token}}").Label("Bearer Token")
-	} else if at == "basic" {
-		ui.TextInput(c, &step.AuthUser).Label("用户名")
-		ui.TextInput(c, &step.AuthPass).Password().Label("密码")
-	}
+	// 认证类型与凭据同一行，避免竖向堆叠。
+	ui.Row(c).Gap(8).AlignItems(ui.Start).Children(func() {
+		if ui.Select(c, &at, authTypes).Label("类型").Width(120).Changed() {
+			step.AuthType = at
+		}
+		if at == "bearer" {
+			ui.TextInput(c, &step.AuthToken).Placeholder("{{token}}").Label("Bearer Token").Grow(1)
+		} else if at == "basic" {
+			ui.TextInput(c, &step.AuthUser).Placeholder("用户名").Label("用户名").Grow(1)
+			ui.TextInput(c, &step.AuthPass).Password().Placeholder("密码").Label("密码").Grow(1)
+		}
+	})
 
 	ui.Divider(c)
 	a.editorExtract(c, t, step)
@@ -768,22 +796,26 @@ func (a *App) editorExtract(c *ui.Context, t *ui.Theme, step *model.Step) {
 			step.Extract = append(step.Extract, model.Extract{Source: "body", Kind: "jsonpath"})
 		}
 	})
+	fieldHint(c, t, "从响应取值存入变量：来源选 body/header/cookie；方式 jsonpath 填 data.token，regex 填正则表达式。")
 	for i := range step.Extract {
 		ex := &step.Extract[i]
 		idx := i
 		ui.Column(c.Key(fmt.Sprintf("ex-%d", idx))).Padding(8).Gap(6).Background(t.Surface).Radius(8).Children(func() {
-			ui.Row(c).Gap(8).Children(func() {
-				ui.TextInput(c, &ex.Name).Placeholder("变量名").Grow(1).Label("变量名")
-				if ui.Button(c, "移除").Clicked() {
+			ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
+				ui.TextInput(c, &ex.Name).Placeholder("变量名，如 token").Grow(1).Label("变量名")
+				if ui.Button(c.Key("del"), "移除").Clicked() {
 					step.Extract = append(step.Extract[:idx], step.Extract[idx+1:]...)
 				}
 			})
-			sources := []string{"body", "header", "cookie", "status"}
-			ui.Select(c, &ex.Source, sources).Label("来源")
-			kinds := []string{"jsonpath", "regex", "whole"}
-			ui.Select(c, &ex.Kind, kinds).Label("方式")
+			// 来源 / 方式 / 默认值 都是短控件，同一行排列。
+			ui.Row(c).Gap(8).Children(func() {
+				sources := []string{"body", "header", "cookie", "status"}
+				ui.Select(c, &ex.Source, sources).Label("来源").Grow(1)
+				kinds := []string{"jsonpath", "regex", "whole"}
+				ui.Select(c, &ex.Kind, kinds).Label("方式").Grow(1)
+				ui.TextInput(c, &ex.Default).Placeholder("可选").Label("默认值").Grow(1)
+			})
 			ui.TextInput(c, &ex.Path).Placeholder("data.token 或正则").Label("路径 / 表达式")
-			ui.TextInput(c, &ex.Default).Placeholder("可选").Label("默认值")
 		})
 	}
 }
@@ -796,22 +828,29 @@ func (a *App) editorAssertList(c *ui.Context, t *ui.Theme, step *model.Step) {
 			step.Assert = append(step.Assert, model.Assert{Source: "status", Op: "eq"})
 		}
 	})
+	fieldHint(c, t, "校验响应是否符合预期：如 status eq 200、jsonpath 变量 contains 文本；失败即中止（除非勾选失败后继续）。")
 	for i := range step.Assert {
 		as := &step.Assert[i]
 		idx := i
 		ui.Column(c.Key(fmt.Sprintf("as-%d", idx))).Padding(8).Gap(6).Background(t.Surface).Radius(8).Children(func() {
-			ui.Row(c).Gap(8).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
 				ui.TextInput(c, &as.Name).Placeholder("断言说明").Grow(1).Label("名称")
-				if ui.Button(c, "移除").Clicked() {
+				if ui.Button(c.Key("del"), "移除").Clicked() {
 					step.Assert = append(step.Assert[:idx], step.Assert[idx+1:]...)
 				}
 			})
-			sources := []string{"status", "jsonpath", "body", "header", "variable"}
-			ui.Select(c, &as.Source, sources).Label("来源")
-			ops := []string{"eq", "ne", "contains", "exists", "gt", "gte", "lt", "lte"}
-			ui.Select(c, &as.Op, ops).Label("操作")
-			ui.TextInput(c, &as.Path).Placeholder("jsonpath / header 名 / 变量名").Label("路径")
-			ui.TextInput(c, &as.Value).Placeholder("期望值").Label("期望值")
+			// 来源 / 操作 同一行。
+			ui.Row(c).Gap(8).Children(func() {
+				sources := []string{"status", "jsonpath", "body", "header", "variable"}
+				ui.Select(c, &as.Source, sources).Label("来源").Grow(1)
+				ops := []string{"eq", "ne", "contains", "exists", "gt", "gte", "lt", "lte"}
+				ui.Select(c, &as.Op, ops).Label("操作").Grow(1)
+			})
+			// 路径 / 期望值 同一行。
+			ui.Row(c).Gap(8).Children(func() {
+				ui.TextInput(c, &as.Path).Placeholder("jsonpath / header 名 / 变量名").Label("路径").Grow(1)
+				ui.TextInput(c, &as.Value).Placeholder("期望值").Label("期望值").Grow(1)
+			})
 		})
 	}
 }
@@ -823,6 +862,7 @@ func (a *App) editorBranch(c *ui.Context, t *ui.Theme, step *model.Step) {
 	}
 	br := step.Branch
 
+	fieldHint(c, t, "根据变量条件决定走 then 还是 else：例如 amount 大于 0 请求页面1，否则请求页面2。")
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, "条件").FontSize(12).Bold()
 		ui.Spacer(c)
@@ -943,7 +983,7 @@ func (a *App) editorSwitch(c *ui.Context, t *ui.Theme, step *model.Step) {
 		step.Switch = &model.Switch{}
 	}
 	sw := step.Switch
-	ui.Text(c, "多分支：自上而下匹配，命中第一个 case 后执行并跳出；都不满足则执行 default").FontSize(10).TextColor(t.TextMuted)
+	fieldHint(c, t, "多分支：自上而下匹配，命中第一个 case 后执行并跳出；都不满足则执行 default。")
 
 	ops := []string{"大于", "大于等于", "小于", "小于等于", "等于", "不等于", "包含", "不包含", "存在", "为空", "为真"}
 	for i := range sw.Cases {
@@ -1119,46 +1159,56 @@ func (a *App) editorLoop(c *ui.Context, t *ui.Theme, step *model.Step) {
 		step.Loop = &model.Loop{Mode: "until", Max: 20, PageVar: "page", PageStart: 1, PageStep: 1}
 	}
 	lp := step.Loop
-	ui.Text(c, "循环模式").FontSize(12).Bold()
-	modes := []string{"until", "count", "foreach"}
-	ui.Select(c, &lp.Mode, modes).Label("模式")
-	ui.Text(c, map[string]string{
-		"until": "直到 BreakWhen 条件成立退出（翻页到空数据）",
-		"count": "固定执行 Count 次",
-		"foreach": "遍历 ListVar 数组的每个元素",
-	}[lp.Mode]).FontSize(10).TextColor(t.TextMuted)
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, "循环模式").FontSize(12).Bold()
+		ui.Spacer(c)
+		modes := []string{"until", "count", "foreach"}
+		ui.Select(c, &lp.Mode, modes).Width(110)
+	})
+	fieldHint(c, t, map[string]string{
+		"until": "翻页场景常用：每轮执行循环体，直到终止条件成立（如返回空数组）退出。",
+		"count": "固定执行 N 次，适合已知页数的场景。",
+		"foreach": "遍历一个数组变量，逐个元素执行循环体。",
+	}[lp.Mode])
 
 	switch lp.Mode {
 	case "count":
 		count := fmt.Sprint(lp.Count)
-		if ui.TextInput(c, &count).Label("次数 Count").Changed() {
+		if ui.TextInput(c, &count).Label("次数 Count").Width(140).Changed() {
 			lp.Count, _ = parseInt(count)
 		}
 	case "foreach":
-		ui.TextInput(c, &lp.ListVar).Placeholder("rows").Label("数组变量 ListVar")
-		ui.TextInput(c, &lp.ItemVar).Placeholder("item").Label("元素变量 ItemVar")
-		ui.TextInput(c, &lp.IndexVar).Placeholder("index").Label("索引变量 IndexVar")
+		// 三个短变量一行排列。
+		ui.Row(c).Gap(8).Children(func() {
+			ui.TextInput(c, &lp.ListVar).Placeholder("rows").Label("数组变量 ListVar").Grow(1)
+			ui.TextInput(c, &lp.ItemVar).Placeholder("item").Label("元素变量 ItemVar").Grow(1)
+			ui.TextInput(c, &lp.IndexVar).Placeholder("index").Label("索引变量 IndexVar").Grow(1)
+		})
+		fieldHint(c, t, "逐项取出数组元素：当前元素存入 ItemVar，下标存入 IndexVar。")
 	case "until":
 		ui.TextInput(c, &lp.BreakWhen).Placeholder("{{len(rows)}} == 0").Label("终止条件 BreakWhen")
+		fieldHint(c, t, "表达式为真时退出循环，例如响应数组为空：{{len(rows)}} == 0。")
 	}
+	// 页码相关字段短，一行排布：页码变量 / 起始页 / 步长 / 最大轮数。
 	ui.Row(c).Gap(8).Children(func() {
 		pageVar := lp.PageVar
-		if ui.TextInput(c, &pageVar).Label("页码变量").Changed() {
+		if ui.TextInput(c, &pageVar).Label("页码变量").Grow(1).Changed() {
 			lp.PageVar = pageVar
 		}
 		ps := fmt.Sprint(lp.PageStart)
-		if ui.TextInput(c, &ps).Label("起始页").Changed() {
+		if ui.TextInput(c, &ps).Label("起始页").Width(80).Changed() {
 			lp.PageStart, _ = parseInt(ps)
 		}
 		pstep := fmt.Sprint(lp.PageStep)
-		if ui.TextInput(c, &pstep).Label("步长").Changed() {
+		if ui.TextInput(c, &pstep).Label("步长").Width(70).Changed() {
 			lp.PageStep, _ = parseInt(pstep)
 		}
+		max := fmt.Sprint(lp.Max)
+		if ui.TextInput(c, &max).Label("最大轮数").Width(88).Changed() {
+			lp.Max, _ = parseInt(max)
+		}
 	})
-	max := fmt.Sprint(lp.Max)
-	if ui.TextInput(c, &max).Label("最大轮数（保护）").Changed() {
-		lp.Max, _ = parseInt(max)
-	}
+	fieldHint(c, t, "翻页时在 URL 用 {{页码变量}}（默认 page）；最大轮数用于兜底防止死循环。")
 
 	ui.Divider(c)
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -1216,7 +1266,7 @@ func (a *App) editorProcess(c *ui.Context, t *ui.Theme, step *model.Step) {
 	if op == "" {
 		op = "json_to_table"
 	}
-	if ui.Select(c, &op, ops).Label("处理操作").Changed() {
+	if ui.Select(c, &op, ops).Label("处理操作").Width(180).Changed() {
 		step.Op = op
 	}
 	hints := map[string]string{
@@ -1229,24 +1279,29 @@ func (a *App) editorProcess(c *ui.Context, t *ui.Theme, step *model.Step) {
 		"flatten": "合并数组：from(逗号分隔的多个变量), to",
 		"format_time": "时间格式化：from, in(unix/unixms), layout, to",
 		"join": "拼接：values(a,b,c), sep, to",
+		"base64encode": "Base64 编码：from=源变量, to=目标变量",
+		"base64decode": "Base64 解码：from=源变量, to=目标变量",
+		"urlencode": "URL 编码：from=源变量, to=目标变量",
+		"urldecode": "URL 解码：from=源变量, to=目标变量",
 	}
+	fieldHint(c, t, "参数（每行 key=value，支持 {{变量}}）")
 	if h, ok := hints[op]; ok {
-		ui.Text(c, h).FontSize(10).TextColor(t.TextMuted)
+		fieldHint(c, t, "「"+op+"」："+h)
 	}
 	if step.Args == nil {
 		step.Args = map[string]string{}
 	}
 	argsText := mapToString(step.Args)
-	if ui.TextArea(c, &argsText).Height(140).Changed() {
+	if ui.TextArea(c, &argsText).Height(120).Changed() {
 		step.Args = stringToMap(argsText, "=")
 	}
-	ui.Text(c, "每行一项 key=value，支持 {{变量}}").FontSize(10).TextColor(t.TextMuted)
 }
 
 func (a *App) editorScript(c *ui.Context, t *ui.Theme, step *model.Step) {
 	ui.Text(c, "JavaScript（goja）").FontSize(12).Bold()
-	ui.Text(c, "可用：vars（读写变量）、last（最近响应：status/body/json）、log()、JSON.stringify/parse").FontSize(10).TextColor(t.TextMuted)
-	ui.TextArea(c, &step.Code).Height(260)
+	fieldHint(c, t, "可用：vars（读写变量）、last（最近响应 status/body/json）、log()、JSON.stringify/parse。")
+	fieldHint(c, t, "示例：vars.token = last.json.data.token;  log('取到 token');")
+	ui.TextArea(c, &step.Code).Height(240)
 }
 
 func (a *App) editorAssert(c *ui.Context, t *ui.Theme, step *model.Step) {
@@ -1255,16 +1310,22 @@ func (a *App) editorAssert(c *ui.Context, t *ui.Theme, step *model.Step) {
 }
 
 func (a *App) editorExport(c *ui.Context, t *ui.Theme, step *model.Step) {
-	ui.TextInput(c, &step.From).Placeholder("table / rows").Label("数据源变量 From")
+	fieldHint(c, t, "把提取到的数组/表格变量导出成文件；相对路径写到 exe 同目录。")
 	formats := []string{"xlsx", "csv", "txt", "json"}
 	f := step.Format
 	if f == "" {
 		f = "xlsx"
 	}
-	if ui.Select(c, &f, formats).Label("格式").Changed() {
-		step.Format = f
-	}
-	ui.TextInput(c, &step.Path).Placeholder("result.xlsx，相对路径或绝对路径").Label("输出路径")
+	ui.Row(c).Gap(8).Children(func() {
+		ui.TextInput(c, &step.From).Placeholder("table / rows").Label("数据源变量 From").Grow(1)
+		if ui.Select(c, &f, formats).Label("格式").Width(110).Changed() {
+			step.Format = f
+		}
+	})
+	ui.Row(c).Gap(8).Children(func() {
+		ui.TextInput(c, &step.Path).Placeholder("result.xlsx").Label("输出路径").Grow(1)
+	})
+	fieldHint(c, t, "xlsx/csv 生成表格，txt 生成纯文本，json 原样输出；留空路径按格式给默认文件名。")
 }
 
 // ---------- 底部：日志 / 结果表 / 变量 三视图 ----------
