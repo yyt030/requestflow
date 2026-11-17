@@ -185,6 +185,9 @@ func (a *App) showAbout() {
 		if p := logger.Path(); p != "" {
 			detail += "\n\n日志文件:\n" + p
 		}
+		if err := logger.Err(); err != nil {
+			detail += "\n\n⚠ 日志未启用:\n" + err.Error()
+		}
 		_, _ = mygo.Dialog.Message(mygo.MessageOptions{
 			Parent:  a.win,
 			Type:    mygo.MessageInfo,

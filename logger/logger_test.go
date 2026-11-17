@@ -31,31 +31,43 @@ func TestLogWritesToFile(t *testing.T) {
 	}
 }
 
-func TestDefaultDirPrefersExeDir(t *testing.T) {
-	dirs := defaultDirs()
-	if len(dirs) == 0 {
-		t.Fatal("defaultDirs() 不应为空")
-	}
+func TestDefaultDirIsExeDir(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatalf("os.Executable 失败: %v", err)
 	}
 	want := filepath.Dir(exe)
-	if dirs[0] != want {
-		t.Fatalf("首选日志目录应为 exe 同目录 %q, got %q", want, dirs[0])
+	if got := defaultDir(); got != want {
+		t.Fatalf("默认日志目录应为 exe 同目录 %q, got %q", want, got)
 	}
-	// 用户配置目录作为降级候选应排在后面（若可取到）。
+	// 显式：默认目录不得是用户配置目录。
 	if base, err := os.UserConfigDir(); err == nil && base != "" {
-		fallback := filepath.Join(base, "requestflow", "logs")
-		found := false
-		for _, d := range dirs[1:] {
-			if d == fallback {
-				found = true
-			}
+		if got := defaultDir(); strings.HasPrefix(got, base) {
+			t.Fatalf("默认目录不应落在用户配置目录下: %q", got)
 		}
-		if !found {
-			t.Fatalf("缺少降级目录 %q, dirs=%v", fallback, dirs)
-		}
+	}
+}
+
+func TestInitFailureIsExplicit(t *testing.T) {
+	// 指向一个无法创建的路径（父级是普通文件），应显式报错且不降级到配置目录。
+	blocked := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(blocked, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	badDir := filepath.Join(blocked, "sub") // 父级是文件，MkdirAll 必失败
+
+	Init(badDir)
+	defer Close()
+
+	if err := Err(); err == nil {
+		t.Fatal("写入失败时 Err() 应返回明确错误")
+	}
+	if got := Path(); got != "" {
+		t.Fatalf("写入失败时 Path() 应为空, got %q", got)
+	}
+	Printf("should not appear")
+	if enabled {
+		t.Fatal("写入失败后日志应保持禁用，不降级到其它目录")
 	}
 }
 

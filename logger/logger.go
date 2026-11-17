@@ -1,6 +1,7 @@
 // Package logger 提供 RequestFlow 的默认运行日志：无论 GUI 还是无界面模式，
-// 日常运行都会把关键事件追加写入可执行文件同目录的日志文件，便于绿色部署与事后排查。
-// 若 exe 同目录不可写（如装在 Program Files），则自动退回用户配置目录。
+// 日常运行都会把关键事件追加写入可执行文件同目录的 requestflow.log，
+// 便于绿色部署与事后排查。日志位置是显式的——只写 exe 同目录（或 -logdir 指定），
+// 不降级到用户配置目录；若写入失败会明确报错，而非静默更换位置。
 package logger
 
 import (
@@ -17,58 +18,63 @@ var (
 	file    *os.File
 	logPath string
 	enabled = true
+	lastErr error
 )
 
-// Init 初始化日志。若 dir 非空则写入该目录；否则默认写可执行文件同目录
-// （绿色部署，日志与 exe 放一起）。若 exe 同目录不可写（如装在 Program Files），
-// 自动退回用户配置目录 %APPDATA%/requestflow/logs（Windows）或 ~/.config/requestflow/logs。
-// 初始化失败不会致命，仅关闭文件日志，GUI/CLI 仍可正常运行。
+// Init 初始化日志。dir 非空时写入该目录，否则写可执行文件同目录（绿色部署）。
+// 只使用显式指定的位置，不会降级到用户配置目录；写入失败会记录错误并通过
+// stderr 明确提示，同时 Err() 可供界面展示。初始化失败不致命，GUI/CLI 仍可运行。
 func Init(dir string) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	var candidates []string
-	if dir != "" {
-		candidates = []string{dir}
-	} else {
-		candidates = defaultDirs()
+	target := dir
+	if target == "" {
+		target = defaultDir()
 	}
-	for _, d := range candidates {
-		if d == "" {
-			continue
-		}
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			continue
-		}
-		p := filepath.Join(d, "requestflow.log")
-		f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-		if err != nil {
-			continue
-		}
-		file = f
-		logPath = p
-		// 记录本次启动，日志跨会话可区分。
-		fmt.Fprintf(file, "[%s] ==== 日志开始 (PID %d) ====\n", now(), os.Getpid())
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		failLocked(target, err)
 		return
 	}
-	enabled = false
+	p := filepath.Join(target, "requestflow.log")
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		failLocked(target, err)
+		return
+	}
+	file = f
+	logPath = p
+	lastErr = nil
+	enabled = true
+	// 记录本次启动，日志跨会话可区分。
+	fmt.Fprintf(file, "[%s] ==== 日志开始 (PID %d) 路径 %s ====\n", now(), os.Getpid(), p)
 }
 
-// defaultDirs 返回候选日志目录，按优先级排列：
-//  1. 可执行文件同目录（默认，绿色部署）
-//  2. 用户配置目录（exe 同目录不可写时的降级）
-func defaultDirs() []string {
-	var dirs []string
+// failLocked 记录初始化失败并显式向 stderr 报错（调用方需持有 mu）。
+func failLocked(target string, err error) {
+	enabled = false
+	logPath = ""
+	lastErr = fmt.Errorf("无法写入日志目录 %q: %w", target, err)
+	fmt.Fprintf(os.Stderr, "[logger] %v\n", lastErr)
+}
+
+// defaultDir 返回默认日志目录：可执行文件同目录。
+// 这是唯一默认位置，不使用用户配置目录；拿不到 exe 路径时退回当前工作目录。
+func defaultDir() string {
 	if exe, err := os.Executable(); err == nil && exe != "" {
-		dirs = append(dirs, filepath.Dir(exe))
+		if d := filepath.Dir(exe); d != "" {
+			return d
+		}
 	}
-	if base, err := os.UserConfigDir(); err == nil && base != "" {
-		dirs = append(dirs, filepath.Join(base, "requestflow", "logs"))
-	}
-	if len(dirs) == 0 {
-		dirs = []string{"logs"}
-	}
-	return dirs
+	return "."
+}
+
+// Err 返回日志初始化/写入的最后一个错误，未出错时为 nil。
+// 供界面在「关于」等处显式告知用户日志未生效。
+func Err() error {
+	mu.Lock()
+	defer mu.Unlock()
+	return lastErr
 }
 
 // Path 返回当前日志文件路径，未启用时返回空串。
@@ -98,7 +104,10 @@ func write(level, format string, args ...interface{}) {
 	if file == nil {
 		return
 	}
-	_, _ = io.WriteString(file, line)
+	if _, err := io.WriteString(file, line); err != nil {
+		lastErr = err
+		fmt.Fprintf(os.Stderr, "[logger] 写日志失败: %v\n", err)
+	}
 }
 
 // Flush 将缓冲落盘（当前为直接写文件，保留接口用于确保持久化）。
