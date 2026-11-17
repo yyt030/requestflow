@@ -21,6 +21,12 @@ import (
 	"requestflow/version"
 )
 
+// resizeGripIcon 是标准 textarea 右下角的缩放手柄（两条斜线的小三角）。
+// 用 currentColor 绘制，随主题文字色变化；比底部整条横线更通用、克制，
+// 与浏览器/主流编辑器的 textarea resize handle 视觉一致。
+var resizeGripIcon = ui.MustParseSVG([]byte(
+	`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M14 5L5 14"/><path d="M14 10l-4 4"/></svg>`))
+
 // App 保存界面所有可变状态。view 是纯函数：从状态构建界面。
 type App struct {
 	win     *mygo.Window
@@ -682,24 +688,23 @@ func fieldHint(c *ui.Context, t *ui.Theme, text string) {
 }
 
 // resizableTextArea 渲染一个可拖拽调整高度的多行文本框。
-// 手柄位于文本框正下方，鼠标悬停显示上下调整光标，上下拖动即改变高度。
+// 手柄是文本框右下角的标准斜线小三角（同浏览器 textarea 的 resize handle），
+// 鼠标悬停显示上下调整光标，上下拖动即改变高度。
 // height 指向 App 中保存该文本框高度的变量；min/max 限制避免缩到不可用或撑满屏幕。
 func resizableTextArea(c *ui.Context, t *ui.Theme, value *string, height *float32, placeholder string, min, max float32) {
 	*height = clampHeight(*height, min, max)
-	ui.TextArea(c, value).Placeholder(placeholder).Height(*height)
 	h := *height
-	// 手柄：高 12px 的透明命中区，内部画一条居中短横线作视觉提示。
-	// 调用 Dragged() 会让该元素自动成为拖拽源（mygo 的约定），无需额外标记。
-	grip := ui.Box(c).Height(12).Cursor(ui.CursorResizeNS).
-		Tooltip("拖动调整文本框高度")
-	if _, dy, held := grip.Dragged(); held && dy != 0 {
-		*height = clampHeight(h+dy, min, max)
-	}
-	grip.Children(func() {
-		ui.Row(c).Fill().AlignItems(ui.Center).Children(func() {
-			ui.Spacer(c)
-			ui.Box(c).Width(40).Height(3).Radius(2).Background(t.TextMuted)
-			ui.Spacer(c)
+	// 外层 Box 作为定位参照，手柄绝对定位到右下角、悬浮在文本框之上。
+	ui.Box(c).Children(func() {
+		ui.TextArea(c, value).Placeholder(placeholder).Height(*height)
+		// 手柄用 currentColor 跟随文字色；命中区稍大于图标本身，便于拖动。
+		grip := ui.Box(c).Absolute().Right(1).Bottom(1).Width(20).Height(20).
+			Cursor(ui.CursorResizeNS).Center().Tooltip("拖动右下角调整高度")
+		if _, dy, held := grip.Dragged(); held && dy != 0 {
+			*height = clampHeight(h+dy, min, max)
+		}
+		grip.Children(func() {
+			ui.Icon(c, resizeGripIcon).Size(16, 16).TextColor(t.Text.Mix(t.TextMuted, 0.35))
 		})
 	})
 }
