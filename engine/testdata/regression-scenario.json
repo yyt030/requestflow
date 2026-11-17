@@ -1,0 +1,125 @@
+{
+  "name": "回归场景：登录→鉴权→断言→分支→翻页→脚本→导出",
+  "baseUrl": "{{BASE}}",
+  "variables": { "amount": "120" },
+  "steps": [
+    {
+      "id": "s1",
+      "name": "登录并提取 Token",
+      "type": "request",
+      "enabled": true,
+      "method": "POST",
+      "url": "/login",
+      "body": "{\"user\":\"demo\",\"pwd\":\"123456\"}",
+      "headers": { "Content-Type": "application/json" },
+      "extract": [
+        { "name": "token", "source": "body", "kind": "jsonpath", "path": "token" }
+      ],
+      "assert": [
+        { "name": "登录返回200", "source": "status", "op": "eq", "value": "200" },
+        { "name": "业务码为0", "source": "jsonpath", "path": "code", "op": "eq", "value": "0" }
+      ]
+    },
+    {
+      "id": "s2",
+      "name": "携带 Token 查询订单",
+      "type": "request",
+      "enabled": true,
+      "method": "GET",
+      "url": "/orders",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "extract": [
+        { "name": "firstAmount", "source": "body", "kind": "jsonpath", "path": "orders.0.amount" },
+        { "name": "orderCount", "source": "body", "kind": "jsonpath", "path": "orders.#" }
+      ],
+      "assert": [
+        { "name": "鉴权通过200", "source": "status", "op": "eq", "value": "200" },
+        { "name": "拿到订单金额", "source": "jsonpath", "path": "orders.0.amount", "op": "eq", "value": "120" }
+      ]
+    },
+    {
+      "id": "s3",
+      "name": "按金额正负分支",
+      "type": "branch",
+      "enabled": true,
+      "branch": {
+        "logic": "and",
+        "conditions": [
+          { "var": "firstAmount", "op": "gt", "value": "0" }
+        ],
+        "then": [
+          {
+            "id": "s3a",
+            "name": "正数→详情页",
+            "type": "request",
+            "enabled": true,
+            "method": "GET",
+            "url": "/detail?balance={{firstAmount}}",
+            "extract": [
+              { "name": "resultPage", "source": "body", "kind": "jsonpath", "path": "page" }
+            ],
+            "assert": [
+              { "name": "是详情页", "source": "jsonpath", "path": "page", "op": "eq", "value": "detail" }
+            ]
+          }
+        ],
+        "else": [
+          {
+            "id": "s3b",
+            "name": "负数→告警页",
+            "type": "request",
+            "enabled": true,
+            "method": "GET",
+            "url": "/warning?balance={{firstAmount}}",
+            "extract": [
+              { "name": "resultPage", "source": "body", "kind": "jsonpath", "path": "page" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "s4",
+      "name": "循环翻页拉取",
+      "type": "loop",
+      "enabled": true,
+      "loop": {
+        "mode": "count",
+        "count": 3,
+        "pageVar": "page",
+        "pageStart": 1,
+        "pageStep": 1,
+        "max": 10
+      },
+      "children": [
+        {
+          "id": "s4-1",
+          "name": "拉取本页",
+          "type": "request",
+          "enabled": true,
+          "method": "GET",
+          "url": "/page?page={{page}}",
+          "extract": [
+            { "name": "pageRows", "source": "body", "kind": "jsonpath", "path": "rows" }
+          ]
+        },
+        {
+          "id": "s4-2",
+          "name": "拼接本页行",
+          "type": "script",
+          "enabled": true,
+          "code": "vars.allText = (vars.allText || '') + String(vars.pageRows) + ' | ';"
+        }
+      ]
+    },
+    {
+      "id": "s5",
+      "name": "导出结果",
+      "type": "export",
+      "enabled": true,
+      "from": "allText",
+      "format": "txt",
+      "path": "{{OUT}}"
+    }
+  ]
+}

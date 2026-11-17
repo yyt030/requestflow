@@ -276,10 +276,14 @@ log("共 " + vars.total + " 条");
 ## 测试
 
 ```bash
-go test ./...       # 全部包（engine / ui / version）
+go test ./...                          # 全部包（engine / ui / version / logger）
+go test ./engine -run TestRegression -v  # 只跑端到端回归案例
+go test -race ./...                    # 竞态检测
 ```
 
-已覆盖：登录提取 Token + Bearer 注入、Cookie 会话、循环翻页终止、脚本写变量 + 导出、表达式求值、表格构建、变量增删改、版本信息格式化。
+单元测试已覆盖：登录提取 Token + Bearer 注入、Cookie 会话、循环翻页终止、脚本写变量 + 导出、表达式求值、表格构建、变量增删改、版本信息格式化。
+
+**端到端回归案例**（`engine/regression_test.go` + `engine/testdata/regression-scenario.json`）：用 `httptest` 起本地服务（无需外网、不依赖固定端口），从 JSON 加载完整场景并运行，覆盖「登录提取 → 携带 Token 鉴权请求 → 状态/JSONPath 断言 → 条件分支 → 循环翻页 → JS 脚本 → 导出」，校验关键变量与导出文件内容；另含分支 else 路径用例。场景中的 `{{BASE}}`/`{{OUT}}` 占位符在测试时替换为实际服务地址与临时输出路径，与 GUI/CLI 打开场景的加载路径一致。新增功能后跑一遍 `go test ./...` 即可回归。
 
 ## 目录
 
@@ -288,7 +292,8 @@ main.go            入口（GUI / -run 无界面 / -version），启动时初始
 console_windows.go Windows 平台：GUI 模式隐藏控制台黑框（build tag）
 console_other.go   非 Windows 平台的空实现（build tag）
 model/model.go     数据模型
-engine/            执行引擎 + cURL 解析器 + 接口调试 + 单元测试
+engine/            执行引擎 + cURL 解析器 + 接口调试 + 单元测试 + 端到端回归测试
+engine/testdata/   回归场景 JSON（占位符 BASE/OUT 运行时替换）
 logger/            默认文件日志（GUI/无界面共用）+ 单元测试
 ui/app.go          mygo 原生界面（步骤选中/双击调试/日志落盘）
 version/version.go 版本信息（构建期注入）+ 单元测试
