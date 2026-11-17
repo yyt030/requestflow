@@ -81,6 +81,12 @@ type App struct {
 	debugResult   *engine.DebugResult
 	debugSending  bool
 	splitDebug    float32
+
+	// 调试面板文本框高度（可拖拽调整）
+	headersHeight float32
+	queryHeight   float32
+	bodyHeight    float32
+	importHeight  float32
 }
 
 // Run 启动 GUI。
@@ -94,6 +100,10 @@ func Run() {
 		debugMethod:   "GET",
 		debugAuthType: "none",
 		debugTimeout:  "30",
+		headersHeight: 56,
+		queryHeight:   56,
+		bodyHeight:    72,
+		importHeight:  200,
 	}
 	app.logs = append(app.logs, "就绪。打开或新建场景，配置步骤后点击【一键运行】。")
 	mygo.App.WhenReady(func() {
@@ -422,11 +432,11 @@ func (a *App) debugRequestArea(c *ui.Context, t *ui.Theme) {
 			})
 
 			ui.Text(c, "请求头 Headers（每行 key: value，支持 {{变量}}）").FontSize(10).TextColor(t.TextMuted)
-			ui.TextArea(c, &a.debugHeaders).Height(56)
+			resizableTextArea(c, t, &a.debugHeaders, &a.headersHeight, "Authorization: Bearer {{token}}", 40, 600)
 			ui.Text(c, "查询参数 Query（每行 key: value）").FontSize(10).TextColor(t.TextMuted)
-			ui.TextArea(c, &a.debugQuery).Height(56)
+			resizableTextArea(c, t, &a.debugQuery, &a.queryHeight, "page: 1", 40, 600)
 			ui.Text(c, "请求体 Body（支持 {{变量}}）").FontSize(10).TextColor(t.TextMuted)
-			ui.TextArea(c, &a.debugBody).Height(72)
+			resizableTextArea(c, t, &a.debugBody, &a.bodyHeight, `{"key": "{{value}}"}`, 40, 800)
 
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "认证").FontSize(11).Bold()
@@ -592,7 +602,8 @@ func (a *App) importPanel(c *ui.Context, t *ui.Theme) {
 			})
 			ui.Text(c, "在 Chrome 开发者工具 Network 面板中右键请求 → Copy → Copy as cURL，粘贴到下方，点击解析即可生成请求步骤。").FontSize(11).TextColor(t.TextMuted)
 			ui.Text(c, "支持 bash / cmd / PowerShell 三种复制格式；自动识别 Bearer Token、Cookie、查询参数与请求体。").FontSize(11).TextColor(t.TextMuted)
-			ui.TextArea(c, &a.importText).Placeholder("curl 'https://api.example.com/orders?page=1' \\\n  -H 'authorization: Bearer xxx' \\\n  -H 'cookie: session=abc'").Height(200)
+			resizableTextArea(c, t, &a.importText, &a.importHeight,
+				"curl 'https://api.example.com/orders?page=1' \\\n  -H 'authorization: Bearer xxx' \\\n  -H 'cookie: session=abc'", 80, 900)
 			if a.importMsg != "" {
 				msgColor := t.Accent
 				if strings.HasPrefix(a.importMsg, "✗") {
@@ -632,6 +643,40 @@ func (a *App) doImportCurl() {
 	a.importText = ""
 	a.importMsg = ""
 	a.log("已导入 cURL 请求: " + step.Method + " " + previewURL(step.URL))
+}
+
+// clampHeight 把拖拽后的高度限制在 [min, max] 内。
+func clampHeight(v, min, max float32) float32 {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
+// resizableTextArea 渲染一个可拖拽调整高度的多行文本框。
+// 手柄位于文本框正下方，鼠标悬停显示上下调整光标，上下拖动即改变高度。
+// height 指向 App 中保存该文本框高度的变量；min/max 限制避免缩到不可用或撑满屏幕。
+func resizableTextArea(c *ui.Context, t *ui.Theme, value *string, height *float32, placeholder string, min, max float32) {
+	*height = clampHeight(*height, min, max)
+	ui.TextArea(c, value).Placeholder(placeholder).Height(*height)
+	h := *height
+	// 手柄：高 12px 的透明命中区，内部画一条居中短横线作视觉提示。
+	// 调用 Dragged() 会让该元素自动成为拖拽源（mygo 的约定），无需额外标记。
+	grip := ui.Box(c).Height(12).Cursor(ui.CursorResizeNS).
+		Tooltip("拖动调整文本框高度")
+	if _, dy, held := grip.Dragged(); held && dy != 0 {
+		*height = clampHeight(h+dy, min, max)
+	}
+	grip.Children(func() {
+		ui.Row(c).Fill().AlignItems(ui.Center).Children(func() {
+			ui.Spacer(c)
+			ui.Box(c).Width(40).Height(3).Radius(2).Background(t.TextMuted)
+			ui.Spacer(c)
+		})
+	})
 }
 
 // previewURL 截断 URL 用于日志显示。

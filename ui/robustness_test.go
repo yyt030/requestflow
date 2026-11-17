@@ -83,6 +83,26 @@ func TestResultErrTextSafe(t *testing.T) {
 	}
 }
 
+// ---------- 可拖拽文本框高度钳制 ----------
+
+func TestClampHeight(t *testing.T) {
+	cases := []struct {
+		v, min, max, want float32
+	}{
+		{100, 40, 600, 100},  // 区间内原样
+		{20, 40, 600, 40},    // 低于下限
+		{900, 40, 600, 600},  // 超过上限
+		{40, 40, 600, 40},    // 正好下限
+		{600, 40, 600, 600},  // 正好上限
+		{-5, 40, 600, 40},    // 负值（向上拖过头）
+	}
+	for _, c := range cases {
+		if got := clampHeight(c.v, c.min, c.max); got != c.want {
+			t.Fatalf("clampHeight(%v,%v,%v)=%v, want %v", c.v, c.min, c.max, got, c.want)
+		}
+	}
+}
+
 type errString string
 
 func (e errString) Error() string { return string(e) }
