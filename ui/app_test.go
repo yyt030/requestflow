@@ -1,11 +1,93 @@
 package ui
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"requestflow/engine"
 	"requestflow/model"
 )
+
+// 验证从 Chrome DevTools 复制的请求头能被正确解析：
+// 值里含 "="（Cookie / Bearer token）不应破坏 key，HTTP/2 伪头应被忽略。
+// 这是修复「粘贴请求头后发送报 invalid header field name」的回归用例。
+func TestStringToMapChromeHeaders(t *testing.T) {
+	in := strings.Join([]string{
+		"accept: */*",
+		"cookie: _ga=GA1.1.123; session=abc",
+		"authorization: Bearer abc123==",
+		"referer: https://example.com/path?q=1",
+		"user-agent: Mozilla/5.0",
+		":authority: www.example.com", // HTTP/2 伪头，应忽略
+		":method: GET",                // 同上
+	}, "\n")
+	got := stringToMap(in, ":")
+	want := map[string]string{
+		"accept":        "*/*",
+		"cookie":        "_ga=GA1.1.123; session=abc",
+		"authorization": "Bearer abc123==",
+		"referer":       "https://example.com/path?q=1",
+		"user-agent":    "Mozilla/5.0",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("解析数量不符: got %d %#v, want %d", len(got), got, len(want))
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("key %q: got %q, want %q", k, got[k], v)
+		}
+	}
+	for _, k := range []string{":authority", ":method"} {
+		if _, ok := got[k]; ok {
+			t.Errorf("HTTP/2 伪头 %q 不应被解析", k)
+		}
+	}
+}
+
+// 端到端：Chrome 请求头文本经解析后真实发送，不应再报
+// "net/http: invalid header field name"，且服务端能收到正确的 Cookie / Authorization。
+func TestDebugSendWithChromeHeaders(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"cookie":%q,"authorization":%q}`,
+			r.Header.Get("Cookie"), r.Header.Get("Authorization"))
+	}))
+	defer srv.Close()
+
+	headersText := strings.Join([]string{
+		"cookie: _ga=GA1.1.123; session=abc",
+		"authorization: Bearer tok==",
+		":authority: example.invalid",
+	}, "\n")
+	res := engine.Debug(engine.DebugRequest{
+		Method:  "GET",
+		URL:     srv.URL,
+		Headers: stringToMap(headersText, ":"),
+	}, nil)
+	if !res.OK {
+		t.Fatalf("调试请求不应失败: %s", res.Err)
+	}
+	for _, want := range []string{"_ga=GA1.1.123; session=abc", "Bearer tok=="} {
+		if !strings.Contains(res.Body, want) {
+			t.Errorf("服务端未收到 %q，响应: %s", want, res.Body)
+		}
+	}
+}
+
+// 验证 mapToString 的输出能被 stringToMap 原样还原（key = value 格式）。
+func TestStringToMapRoundTrip(t *testing.T) {
+	in := map[string]string{"Authorization": "Bearer x==", "X-Test": "a=b", "Empty": ""}
+	text := mapToString(in)
+	got := stringToMap(text, ":")
+	for k, v := range in {
+		if got[k] != v {
+			t.Errorf("round trip %q: got %q, want %q", k, got[k], v)
+		}
+	}
+}
 
 // 验证结果表数据源筛选：只有数组/JSON数组变量被识别为可表格展示。
 func TestTabularVarsSelection(t *testing.T) {

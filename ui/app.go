@@ -1868,20 +1868,29 @@ func mapToString(m map[string]string) string {
 	return b.String()
 }
 
+// stringToMap 把多行文本解析为 key→value，兼容两种写法：
+//   - "key: value"（界面提示格式，也是 Chrome DevTools「Copy request headers」的格式）
+//   - "key = value"（mapToString 的输出格式）
+//
+// 以行内最先出现的 ":" 或 "=" 作为分隔符且只切一次，确保值里的 "=" 不会被误当分隔符
+// （Cookie、Bearer token 等经常含 "="）。以 ":" 开头的 HTTP/2 伪头（:authority、:method 等）
+// 会被跳过——Go 的 HTTP 客户端不接受这类头。
 func stringToMap(s, _ string) map[string]string {
 	out := map[string]string{}
-	for _, line := range strings.Split(s, "\n") {
-		line = strings.TrimSpace(line)
+	for _, raw := range strings.Split(s, "\n") {
+		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) == 1 {
-			parts = strings.SplitN(line, ":", 2)
+		i := strings.IndexAny(line, ":=")
+		if i <= 0 { // 无分隔符，或以 ":" 开头（HTTP/2 伪头 / 空 key）
+			continue
 		}
-		if len(parts) == 2 {
-			out[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+		key := strings.TrimSpace(line[:i])
+		if key == "" {
+			continue
 		}
+		out[key] = strings.TrimSpace(line[i+1:])
 	}
 	return out
 }
