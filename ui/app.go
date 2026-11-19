@@ -337,17 +337,11 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 		ui.Row(c).Padding(0, 12, 10, 12).Children(func() {
 			ui.SearchField(c, &a.stepSearch).Placeholder("搜索步骤…")
 		})
-		// 场景集合根节点（可展开）：名称 + Base URL。
-		ui.Column(c).Padding(0, 8, 6, 8).Children(func() {
-			ui.Row(c).Gap(6).Padding(6, 4).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "▾").FontSize(10).TextColor(t.TextMuted)
-				ui.Icon(c, iconFolder).Size(14, 14).TextColor(brandOrange)
-				ui.TextInput(c, &a.scenario.Name).FontSize(12).Bold().Grow(1)
-			})
-			ui.Row(c).Gap(6).Padding(0, 4, 4, 24).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "ⓘ").FontSize(10).TextColor(t.TextMuted).Tooltip("所有相对路径请求都会拼接此 Base URL")
-				ui.TextInput(c, &a.scenario.BaseURL).Placeholder("https://api.example.com").FontSize(11)
-			})
+		// 场景集合根节点：名称。
+		ui.Row(c).Padding(6, 12, 6, 12).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "▾").FontSize(10).TextColor(t.TextMuted)
+			ui.Icon(c, iconFolder).Size(14, 14).TextColor(brandOrange)
+			ui.TextInput(c, &a.scenario.Name).FontSize(13).Bold().Grow(1)
 		})
 		ui.Divider(c)
 		// 步骤导航树：带类型色图标、选中态导航条。
