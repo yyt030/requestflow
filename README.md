@@ -27,15 +27,22 @@
 
 - **Go 1.27+**（mygo 要求，工具链会自动下载）
 - 桌面环境用于 GUI；无界面模式无需桌面
+- **Linux GUI 依赖 GTK3 + WebKitGTK**（mygo 内嵌浏览器引擎渲染界面）：
+  - Debian/Ubuntu：`sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0`
+  - Fedora：`sudo dnf install gtk3 webkit2gtk4.1`
+  - 若缺库，启动会明确报错（不再静默卡住）
 
 ```bash
 ./build.sh                              # 推荐：自动注入版本号构建（见下）
 ./requestflow                           # 启动 GUI
+./requestflow -software                 # Linux 图形异常时强制软件渲染启动 GUI
 ./requestflow -run scenarios/demo.json  # 无界面运行
 ./requestflow -version                  # 查看版本号
 # 或普通编译（版本号为 dev）：
 go build -o requestflow .
 ```
+
+> **Linux 上运行 GUI 卡死/白屏？** RequestFlow 的界面基于 WebKitGTK，其 GPU（DMA-BUF）渲染在部分 NVIDIA 驱动、虚拟机、远程桌面上会把桌面合成器拖死，表现为"运行后完全没反应、连鼠标都卡住"。程序已默认强制走 CPU 软件渲染规避；若仍异常，可：① 用 `-software` 启动；② 终端执行前加 `GDK_BACKEND=x11 LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./requestflow`；③ 无图形需求直接用 `-run` 无界面模式。若无 display（如 SSH/容器），程序会明确提示并退出，而非卡住。
 
 ## 打包（Windows 分发）
 

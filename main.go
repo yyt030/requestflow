@@ -17,6 +17,7 @@ func main() {
 	runFile := flag.String("run", "", "以无界面模式运行指定场景 JSON")
 	showVersion := flag.Bool("version", false, "显示版本号并退出")
 	logDir := flag.String("logdir", "", "指定日志目录（默认写可执行文件同目录）")
+	software := flag.Bool("software", false, "强制软件渲染（Linux 图形异常/卡死时尝试）")
 	flag.Parse()
 
 	// 日常运行默认记录日志（GUI 与无界面模式共用）。
@@ -34,9 +35,16 @@ func main() {
 		return
 	}
 
-	// 进入图形界面：Windows 下隐藏双击 exe 时自动弹出的控制台黑框。
+	// 进入图形界面前：Linux 下做图形环境预检 + 软件渲染兜底，避免无 display
+	// 时静默卡住，或 WebKitGPU 在特定驱动上拖死整个桌面。
 	// CLI 模式（-version/-run）不调用，保证终端输出可见。
 	hideConsole()
+	prepareGUI(*software)
+	if err := guiAvailable(); err != nil {
+		fmt.Fprintln(os.Stderr, "无法启动图形界面:", err)
+		logger.Error("图形环境检测失败: %v", err)
+		os.Exit(1)
+	}
 	ui.Run()
 }
 

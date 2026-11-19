@@ -90,9 +90,16 @@ cp scenarios/*.json "$STAGE/scenarios/"
 if [[ "$GOOS_T" == "windows" ]]; then
   RUNBIN="requestflow.exe"
   GUI_TIP="双击 $RUNBIN"
+  EXTRA=""
 else
   RUNBIN="./requestflow"
-  GUI_TIP="在图形桌面环境中执行 $RUNBIN（无桌面环境可用下文的 -run 无界面模式）"
+  GUI_TIP="在图形桌面环境中执行 $RUNBIN；若卡死/白屏，用 $RUNBIN -software 强制软件渲染"
+  EXTRA="【Linux GUI 依赖】GTK3 + WebKitGTK
+  Debian/Ubuntu: sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0
+  Fedora:        sudo dnf install gtk3 webkit2gtk4.1
+  无图形环境请用下方的 -run 无界面模式。
+
+"
 fi
 cat > "$STAGE/使用说明.txt" <<EOF
 RequestFlow $ver
@@ -101,7 +108,7 @@ RequestFlow $ver
 【运行 GUI】
   $GUI_TIP
 
-【无界面运行示例】
+${EXTRA}【无界面运行示例】
   $RUNBIN -run scenarios/demo.json
 
 【查看版本】
