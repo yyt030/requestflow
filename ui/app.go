@@ -27,6 +27,34 @@ import (
 var resizeGripIcon = ui.MustParseSVG([]byte(
 	`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M14 5L5 14"/><path d="M14 10l-4 4"/></svg>`))
 
+// 步骤列表右侧的工具按钮图标：细线箭头与垃圾桶，用 currentColor 随文字色变化。
+var (
+	iconMoveUp = ui.MustParseSVG([]byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3.5"/><path d="M4.5 7L8 3.5 11.5 7"/></svg>`))
+	iconMoveDown = ui.MustParseSVG([]byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v9.5"/><path d="M4.5 9L8 12.5 11.5 9"/></svg>`))
+	iconDelete = ui.MustParseSVG([]byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.7 4.2h10.6"/><path d="M6.2 4.2V2.7h3.6v1.5"/><path d="M4.2 4.2l.6 8.9h6.4l.6-8.9"/><path d="M6.6 6.6v4.1M9.4 6.6v4.1"/></svg>`))
+)
+
+// stepToolButton 渲染步骤列表右侧的轻量图标按钮：默认透明无边框，仅 hover 时淡色高亮，
+// 比标准小方块按钮更克制；danger 用于删除按钮，图标着危险色。
+func stepToolButton(c *ui.Context, t *ui.Theme, key string, icon *ui.SVG, tip string, disabled, danger bool) ui.Element {
+	b := ui.ButtonBase(c.Key(key)).Size(22, 22).Radius(4).Label(tip).Tooltip(tip).
+		Cursor(ui.CursorPointer).Disabled(disabled)
+	col := t.TextMuted
+	if danger {
+		col = t.Danger
+	}
+	b.Children(func() {
+		ui.Icon(c, icon).Size(13, 13).TextColor(col)
+	})
+	if b.Hovered() && !disabled {
+		b.Background(t.SurfaceHover)
+	}
+	return b
+}
+
 // App 保存界面所有可变状态。view 是纯函数：从状态构建界面。
 type App struct {
 	win     *mygo.Window
@@ -339,13 +367,13 @@ func (a *App) stepList(c *ui.Context, t *ui.Theme) {
 				a.openStepDebug(idx)
 			}
 			ui.Checkbox(c, &a.scenario.Steps[idx].Enabled, "")
-			if ui.Button(c.Key("up"), "↑").Width(26).Disabled(idx == 0).Clicked() {
+			if stepToolButton(c, t, "up", iconMoveUp, "上移步骤", idx == 0, false).Clicked() {
 				a.moveStep(idx, -1)
 			}
-			if ui.Button(c.Key("dn"), "↓").Width(26).Disabled(idx == len(steps)-1).Clicked() {
+			if stepToolButton(c, t, "dn", iconMoveDown, "下移步骤", idx == len(steps)-1, false).Clicked() {
 				a.moveStep(idx, 1)
 			}
-			if ui.Button(c.Key("del"), "×").Width(26).Clicked() {
+			if stepToolButton(c, t, "del", iconDelete, "删除步骤", false, true).Clicked() {
 				a.deleteStep(idx)
 			}
 		})
