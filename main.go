@@ -16,7 +16,7 @@ import (
 func main() {
 	runFile := flag.String("run", "", "以无界面模式运行指定场景 JSON")
 	showVersion := flag.Bool("version", false, "显示版本号并退出")
-	logDir := flag.String("logdir", "", "指定日志目录（默认写入用户配置目录）")
+	logDir := flag.String("logdir", "", "指定日志目录（默认写可执行文件同目录）")
 	flag.Parse()
 
 	// 日常运行默认记录日志（GUI 与无界面模式共用）。
@@ -46,25 +46,21 @@ func runHeadless(path string) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		logger.Error("读取场景失败: %v", err)
-		fmt.Fprintln(os.Stderr, "读取场景失败:", err)
 		os.Exit(1)
 	}
 	var sc model.Scenario
 	if err := json.Unmarshal(data, &sc); err != nil {
 		logger.Error("解析场景失败: %v", err)
-		fmt.Fprintln(os.Stderr, "解析场景失败:", err)
 		os.Exit(1)
 	}
 	res := engine.NewEngine(&sc, func(ev engine.Event) {
 		if ev.Message != "" {
 			line := fmt.Sprintf("[%s] %s: %s", ev.Type, ev.StepName, ev.Message)
-			fmt.Println(line)
 			logger.Printf("%s", line)
 		}
 	}).Run()
 	if !res.OK {
 		logger.Error("执行失败: %v", res.Err)
-		fmt.Fprintln(os.Stderr, "执行失败:", res.Err)
 		os.Exit(1)
 	}
 	b, _ := json.MarshalIndent(res.Vars, "", "  ")
