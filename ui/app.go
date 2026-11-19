@@ -35,7 +35,62 @@ var (
 		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v9.5"/><path d="M4.5 9L8 12.5 11.5 9"/></svg>`))
 	iconDelete = ui.MustParseSVG([]byte(
 		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.7 4.2h10.6"/><path d="M6.2 4.2V2.7h3.6v1.5"/><path d="M4.2 4.2l.6 8.9h6.4l.6-8.9"/><path d="M6.6 6.6v4.1M9.4 6.6v4.1"/></svg>`))
+	// 顶栏与 Collection 图标。
+	iconSearch = ui.MustParseSVG([]byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L14 14"/></svg>`))
+	iconFolder = ui.MustParseSVG([]byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2 4.5h4l1.4 1.6H14v6.4H2z"/></svg>`))
+	iconSend = ui.MustParseSVG([]byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8l12-5-4 12-2.2-5.2L2 8z"/><path d="M7.8 9.8L14 3"/></svg>`))
+	iconPlus = ui.MustParseSVG([]byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>`))
+	iconNew = ui.MustParseSVG([]byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3"/></svg>`))
+	iconOpen = ui.MustParseSVG([]byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2 5V3.5h4l1.3 1.5H14V13H2z"/></svg>`))
+	iconSave = ui.MustParseSVG([]byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M3 2.5h8.5L13.5 5v8.5h-11z"/><path d="M5 2.5v4h6v-4M5 13.5v-4h6v4"/></svg>`))
+	iconImport = ui.MustParseSVG([]byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 11.5V14h10v-2.5"/></svg>`))
 )
+
+// Postman 风格配色：品牌橙与 HTTP 方法的语义色。
+var (
+	brandOrange = ui.RGB(255, 108, 55) // Postman 标志橙
+	methodColors = map[string]ui.Color{
+		"GET": ui.RGB(97, 175, 254), "POST": ui.RGB(73, 204, 144),
+		"PUT": ui.RGB(252, 161, 48), "PATCH": ui.RGB(80, 227, 194),
+		"DELETE": ui.RGB(249, 62, 62), "HEAD": ui.RGB(144, 18, 254),
+	}
+	// 步骤类型图标色，让左侧 Collection 树一眼区分组件类型。
+	stepColors = map[model.StepType]ui.Color{
+		model.StepRequest: ui.RGB(97, 175, 254), model.StepLoop: ui.RGB(144, 18, 254),
+		model.StepBranch: ui.RGB(252, 161, 48), model.StepSwitch: ui.RGB(80, 227, 194),
+		model.StepParallel: ui.RGB(59, 130, 246), model.StepMerge: ui.RGB(59, 130, 246),
+		model.StepProcess: ui.RGB(148, 163, 184), model.StepScript: ui.RGB(234, 179, 8),
+		model.StepAssert: ui.RGB(73, 204, 144), model.StepExport: ui.RGB(249, 115, 22),
+	}
+)
+
+// methodColor 返回 HTTP 方法的语义色，未知方法用强调色。
+func methodColor(m string) ui.Color {
+	if c, ok := methodColors[strings.ToUpper(strings.TrimSpace(m))]; ok {
+		return c
+	}
+	return ui.RGB(148, 163, 184)
+}
+
+// iconButton 是通用图标按钮：透明底、hover 高亮，用于顶栏与侧栏。
+func iconButton(c *ui.Context, t *ui.Theme, key string, icon *ui.SVG, tip string, size float32, col ui.Color) ui.Element {
+	b := ui.ButtonBase(c.Key(key)).Size(size, size).Radius(5).Label(tip).Tooltip(tip).Cursor(ui.CursorPointer)
+	b.Children(func() {
+		ui.Icon(c, icon).Size(size-8, size-8).TextColor(col)
+	})
+	if b.Hovered() {
+		b.Background(t.SurfaceHover)
+	}
+	return b
+}
 
 // stepToolButton 渲染步骤列表右侧的轻量图标按钮：默认透明无边框，仅 hover 时淡色高亮，
 // 比标准小方块按钮更克制；danger 用于删除按钮，图标着危险色。
@@ -81,7 +136,8 @@ type App struct {
 	splitLog  float32
 
 	// "新建步骤"菜单
-	adding bool
+	adding     bool
+	stepSearch string // 左侧 Collection 步骤搜索过滤
 
 	// 底部控制台视图：0=日志 1=结果表 2=变量
 	consoleView int
@@ -99,8 +155,11 @@ type App struct {
 	importText string
 	importMsg  string
 
+	// 主工作区标签：0=步骤编排 1=接口调试 2=运行结果（Postman 风格标签式工作区）
+	mainTab int
+
 	// 接口调试面板
-	showDebug     bool
+	showDebug     bool // 兼容旧动作：请求双击时置 true；view 里同步到 mainTab=1
 	debugMethod   string
 	debugURL      string
 	debugHeaders  string // 每行 key: value
@@ -113,6 +172,7 @@ type App struct {
 	debugTimeout  string
 	debugInsecure bool
 	debugView     int // 0=美化响应 1=响应头 2=Cookie 3=cURL
+	debugReqTab   int // 0=Params 1=Headers 2=Body 3=Auth（Postman 风格子标签）
 	debugResult   *engine.DebugResult
 	debugSending  bool
 	splitDebug    float32
@@ -157,56 +217,86 @@ func Run() {
 
 func (a *App) view(c *ui.Context) {
 	t := c.Theme()
+	// 兼容旧动作：双击请求步骤会置 showDebug=true，这里同步到调试标签并复位，
+	// 让所有入口（工具栏/双击/原 showDebug 调用）统一由 mainTab 驱动主工作区。
+	if a.showDebug {
+		a.mainTab = 1
+		a.showDebug = false
+	}
 	ui.Column(c).Fill().Children(func() {
 		a.toolbar(c, t)
-		ui.Divider(c)
 		ui.Split(c, &a.splitSide, func() { a.sidebar(c, t) }, func() {
-			if a.showDebug {
-				a.debugPanel(c, t)
-			} else {
-				ui.SplitVertical(c, &a.splitLog, func() { a.editor(c, t) }, func() { a.console(c, t) }).Fill()
-			}
+			ui.Column(c).Fill().Children(func() {
+				// Postman 风格：主工作区用标签切换「编排 / 调试 / 运行结果」。
+				ui.Row(c).Padding(6, 12, 0, 12).Children(func() {
+					ui.Tabs(c, &a.mainTab, "步骤编排", "接口调试", "运行结果")
+				})
+				ui.Divider(c)
+				switch a.mainTab {
+				case 1:
+					a.debugPanel(c, t)
+				case 2:
+					a.consoleOnly(c, t)
+				default:
+					a.editor(c, t)
+				}
+			})
 		}).Grow(1)
 		a.statusBar(c, t)
 	})
 }
 
-// ---------- 顶部工具栏 ----------
+// consoleOnly 把运行结果（日志/结果表/变量）作为独立标签页铺满主工作区。
+func (a *App) consoleOnly(c *ui.Context, t *ui.Theme) {
+	a.console(c, t)
+}
+
+// ---------- 顶部工具栏（Postman 风格：品牌 + 场景 + 操作） ----------
 func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
-	ui.Row(c).Gap(8).Padding(10, 12).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, "RequestFlow").FontSize(16).Bold()
-		ui.Text(c, "HTTP 流程自动化").FontSize(11).TextColor(t.TextMuted)
+	ui.Row(c).Gap(10).Padding(10, 14).AlignItems(ui.Center).Children(func() {
+		// 品牌标识：橙色圆角块 + 名称。
+		ui.Box(c).Width(26).Height(26).Radius(7).Background(brandOrange).Center().Children(func() {
+			ui.Text(c, "R").FontSize(14).Bold().TextColor(ui.RGB(255, 255, 255))
+		})
+		ui.Column(c).Gap(0).Children(func() {
+			ui.Text(c, "RequestFlow").FontSize(14).Bold()
+			ui.Text(c, "HTTP 流程自动化").FontSize(9).TextColor(t.TextMuted)
+		})
+		ui.Divider(c).Height(24)
+		// 当前场景名（工作区概念）。
+		ui.Icon(c, iconFolder).Size(14, 14).TextColor(t.TextMuted)
+		ui.Text(c, a.scenario.Name).FontSize(12).Bold()
+		if a.filePath != "" {
+			ui.Badge(c, "已保存").TextColor(t.TextMuted)
+		} else {
+			ui.Badge(c, "未保存").TextColor(t.TextMuted)
+		}
 		ui.Spacer(c)
-		if ui.Button(c, "新建").Clicked() {
+		// 操作按钮：新建/打开/保存（图标）+ 导入。
+		if iconButton(c, t, "new", iconNew, "新建场景", 28, t.Text).Clicked() {
 			a.newScenario()
 		}
-		if ui.Button(c, "打开").Clicked() {
+		if iconButton(c, t, "open", iconOpen, "打开场景", 28, t.Text).Clicked() {
 			a.openScenario()
 		}
-		if ui.Button(c, "保存").Clicked() {
+		if iconButton(c, t, "save", iconSave, "保存场景", 28, t.Text).Clicked() {
 			a.saveScenario()
 		}
 		ui.Divider(c).Height(20)
 		if ui.Button(c, "⇥ 导入 cURL").Clicked() {
-			a.showImport = !a.showImport
+			a.showImport = true
 			a.importMsg = ""
+			a.mainTab = 0
 		}
-		debugLabel := "⚡ 接口调试"
-		if a.showDebug {
-			debugLabel = "⚡ 返回编排"
-		}
-		if ui.Button(c, debugLabel).Clicked() {
-			a.showDebug = !a.showDebug
-		}
-		if ui.PrimaryButton(c, "▶ 一键运行").Disabled(a.running).Clicked() {
-			a.run()
-		}
-		if ui.Button(c, "■ 停止").Disabled(!a.running).Clicked() {
-			a.stop()
+		if ui.Button(c, "ⓘ").Tooltip("关于 RequestFlow " + version.Short()).Clicked() {
+			a.showAbout()
 		}
 		ui.Divider(c).Height(20)
-		if ui.Button(c, "ⓘ "+version.Short()).Clicked() {
-			a.showAbout()
+		if ui.Button(c, "■").Tooltip("停止运行").Disabled(!a.running).Clicked() {
+			a.stop()
+		}
+		if ui.PrimaryButton(c, "▶ 运行").Disabled(a.running).Clicked() {
+			a.run()
 		}
 	})
 }
@@ -233,40 +323,53 @@ func (a *App) showAbout() {
 	}()
 }
 
-// ---------- 左侧：场景信息 + 步骤列表 ----------
+// ---------- 左侧：Collection 风格场景导航 ----------
 func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Fill().Children(func() {
-		ui.Column(c).Padding(12).Gap(6).Children(func() {
-			ui.Text(c, "场景").FontSize(11).Bold().TextColor(t.TextMuted)
-			ui.TextInput(c, &a.scenario.Name).Label("名称")
-			ui.TextInput(c, &a.scenario.BaseURL).Placeholder("https://api.example.com").Label("Base URL")
+		// 集合标题栏：Collection 名 + 新建步骤。
+		ui.Row(c).Padding(12, 12, 8, 12).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, iconFolder).Size(16, 16).TextColor(brandOrange)
+			ui.Text(c, "Collections").FontSize(13).Bold()
+			ui.Spacer(c)
+			ui.Text(c, fmt.Sprintf("%d 个步骤", len(a.scenario.Steps))).FontSize(10).TextColor(t.TextMuted)
+		})
+		// 搜索框：过滤步骤。
+		ui.Row(c).Padding(0, 12, 10, 12).Children(func() {
+			ui.SearchField(c, &a.stepSearch).Placeholder("搜索步骤…")
+		})
+		// 场景集合根节点（可展开）：名称 + Base URL。
+		ui.Column(c).Padding(0, 8, 6, 8).Children(func() {
+			ui.Row(c).Gap(6).Padding(6, 4).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "▾").FontSize(10).TextColor(t.TextMuted)
+				ui.Icon(c, iconFolder).Size(14, 14).TextColor(brandOrange)
+				ui.TextInput(c, &a.scenario.Name).FontSize(12).Bold().Grow(1)
+			})
+			ui.Row(c).Gap(6).Padding(0, 4, 4, 24).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "ⓘ").FontSize(10).TextColor(t.TextMuted).Tooltip("所有相对路径请求都会拼接此 Base URL")
+				ui.TextInput(c, &a.scenario.BaseURL).Placeholder("https://api.example.com").FontSize(11)
+			})
 		})
 		ui.Divider(c)
-		// 全局变量区（可折叠）
-		ui.Column(c).Padding(12, 8).Gap(6).Children(func() {
+		// 步骤导航树：带类型色图标、选中态导航条。
+		ui.Scroll(c).Grow(1).Padding(4, 8, 8, 8).Children(func() {
+			a.stepList(c, t)
+		})
+		ui.Divider(c)
+		// 全局变量（可折叠，Postman 的 Variables 概念）。
+		ui.Column(c).Padding(8, 8, 10, 8).Gap(4).Children(func() {
 			ui.Row(c).AlignItems(ui.Center).Children(func() {
-				if ui.Button(c, map[bool]string{true: "▾", false: "▸"}[a.showVars]+" 全局变量").Clicked() {
+				if ui.Button(c, map[bool]string{true: "▾", false: "▸"}[a.showVars]+"  环境变量").Clicked() {
 					a.showVars = !a.showVars
 				}
 				ui.Text(c, fmt.Sprintf("(%d)", len(a.scenario.Variables))).FontSize(10).TextColor(t.TextMuted)
+				ui.Spacer(c)
+				if iconButton(c, t, "addvar", iconPlus, "新增变量", 22, t.Text).Clicked() {
+					a.showVars = true
+				}
 			})
 			if a.showVars {
 				a.variablesEditor(c, t)
 			}
-		})
-		ui.Divider(c)
-		ui.Row(c).Padding(12, 8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, fmt.Sprintf("步骤 (%d)", len(a.scenario.Steps))).FontSize(11).Bold().TextColor(t.TextMuted)
-			ui.Spacer(c)
-			if ui.Button(c, "+ 添加").Clicked() {
-				a.adding = !a.adding
-			}
-		})
-		if a.adding {
-			a.addMenu(c, t)
-		}
-		ui.Scroll(c).Grow(1).Padding(0, 8, 8, 8).Children(func() {
-			a.stepList(c, t)
 		})
 	})
 }
@@ -343,40 +446,88 @@ func (a *App) addMenu(c *ui.Context, t *ui.Theme) {
 
 func (a *App) stepList(c *ui.Context, t *ui.Theme) {
 	steps := a.scenario.Steps
-	if len(steps) == 0 {
-		ui.Text(c, "暂无步骤，点击上方 + 添加。").FontSize(11).TextColor(t.TextMuted).Padding(8)
-		return
-	}
+	q := strings.ToLower(strings.TrimSpace(a.stepSearch))
+	// 搜索过滤：匹配步骤名或类型名，保持原始索引用于选择/移动。
+	visible := make([]int, 0, len(steps))
 	for i := range steps {
-		idx := i
-		selected := idx == a.selectedStep
-		ui.Row(c.Key(fmt.Sprintf("step-%d", idx))).Gap(6).Padding(4, 6).Radius(6).Children(func() {
-			// 选中态：按钮自身用淡蓝底 + 蓝色加粗标题。
-			// 不用整行 Accent 深蓝底配白字——mygo 的 Button 自带浅色 Surface 背景，
-			// 白字落在浅底上会看不清；淡蓝底 + 深蓝字既醒目又保证对比度。
-			b := ui.Button(c, a.stepLabel(steps[idx])).Grow(1).
-				Tooltip("单击选中并配置；双击进入调试")
-			if selected {
-				b = b.Background(t.Accent.Mix(t.Surface, 0.86)).TextColor(t.Accent).Bold()
-			}
-			if b.Clicked() {
-				a.selectStep(idx)
-			}
-			if b.DoubleClicked() {
-				a.selectStep(idx)
-				a.openStepDebug(idx)
-			}
-			ui.Checkbox(c, &a.scenario.Steps[idx].Enabled, "")
-			if stepToolButton(c, t, "up", iconMoveUp, "上移步骤", idx == 0, false).Clicked() {
-				a.moveStep(idx, -1)
-			}
-			if stepToolButton(c, t, "dn", iconMoveDown, "下移步骤", idx == len(steps)-1, false).Clicked() {
-				a.moveStep(idx, 1)
-			}
-			if stepToolButton(c, t, "del", iconDelete, "删除步骤", false, true).Clicked() {
-				a.deleteStep(idx)
-			}
-		})
+		if q == "" || strings.Contains(strings.ToLower(steps[i].Name), q) ||
+			strings.Contains(strings.ToLower(string(steps[i].Type)), q) {
+			visible = append(visible, i)
+		}
+	}
+	if len(visible) == 0 {
+		if q != "" {
+			ui.Text(c, "没有匹配的步骤").FontSize(11).TextColor(t.TextMuted).Padding(8)
+		} else {
+			ui.Text(c, "暂无步骤，点击下方 + 新建。").FontSize(11).TextColor(t.TextMuted).Padding(8)
+		}
+	} else {
+		for _, idx := range visible {
+			step := &steps[idx]
+			selected := idx == a.selectedStep
+			sc := stepColors[step.Type]
+			ui.Row(c.Key(fmt.Sprintf("step-%d", idx))).Gap(4).Padding(3, 6).Radius(6).
+				AlignItems(ui.Center).Children(func() {
+					if selected {
+						ui.Box(c).Width(3).Height(20).Radius(2).Background(t.Accent)
+					} else {
+						ui.Box(c).Width(3).Height(20)
+					}
+					// 类型色圆点兼作启用开关：实心=启用、空心=禁用。
+					// Postman 风格不额外占一个勾选框，点击即可启停步骤。
+					dot := ui.ButtonBase(c.Key("en")).Size(10, 10).Radius(5).
+						Tooltip(map[bool]string{true: "点击禁用此步骤", false: "点击启用此步骤"}[step.Enabled])
+					if step.Enabled {
+						dot.Background(sc)
+					} else {
+						dot.Border(1, t.TextMuted)
+					}
+					if dot.Clicked() {
+						step.Enabled = !step.Enabled
+					}
+					name := step.Name
+					if name == "" {
+						name = string(step.Type)
+					}
+					b := ui.Button(c, name).Grow(1).
+						Tooltip("单击选中并配置；双击 HTTP 请求进入调试")
+					if selected {
+						b = b.Background(t.Accent.Mix(t.Surface, 0.86)).TextColor(t.Accent).Bold()
+					}
+					if !step.Enabled {
+						b = b.TextColor(t.TextMuted)
+					}
+					if b.Clicked() {
+						a.selectStep(idx)
+					}
+					if b.DoubleClicked() {
+						a.selectStep(idx)
+						a.openStepDebug(idx)
+					}
+					if stepToolButton(c, t, "up", iconMoveUp, "上移步骤", idx == 0, false).Clicked() {
+						a.moveStep(idx, -1)
+					}
+					if stepToolButton(c, t, "dn", iconMoveDown, "下移步骤", idx == len(steps)-1, false).Clicked() {
+						a.moveStep(idx, 1)
+					}
+					if stepToolButton(c, t, "del", iconDelete, "删除步骤", false, true).Clicked() {
+						a.deleteStep(idx)
+					}
+				})
+		}
+	}
+	// Collection 底部：新建步骤入口（展开类型菜单）。
+	ui.Row(c).Padding(6, 6, 2, 6).Children(func() {
+		label := "+ 新建步骤"
+		if a.adding {
+			label = "− 收起"
+		}
+		if ui.Button(c, label).Clicked() {
+			a.adding = !a.adding
+		}
+	})
+	if a.adding {
+		a.addMenu(c, t)
 	}
 }
 
@@ -455,79 +606,97 @@ func (a *App) debugPanel(c *ui.Context, t *ui.Theme) {
 	}).Fill()
 }
 
-// debugRequestArea 请求配置区：配置项可滚动，操作栏固定在底部。
+// debugRequestArea Postman 风格请求构建区：请求行(方法徽章+URL+Send) + 配置子标签。
 func (a *App) debugRequestArea(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Fill().Children(func() {
-		ui.Scroll(c).Grow(1).Padding(12, 14, 6, 14).Gap(9).Children(func() {
-			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "⚡ 接口调试").FontSize(14).Bold()
-				ui.Text(c, "单独发送请求并查看响应，无需运行整个场景").FontSize(10).TextColor(t.TextMuted)
+		ui.Column(c).Gap(8).Padding(10, 12, 6, 12).Children(func() {
+			// 标题行。
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "接口调试").FontSize(13).Bold()
+				ui.Text(c, "单独发送请求并查看响应").FontSize(10).TextColor(t.TextMuted)
 				ui.Spacer(c)
 				if a.debugResult != nil && a.debugResult.Curl != "" {
-					if ui.Button(c, "⇥  cURL 导入").Clicked() {
+					if ui.Button(c, "⇥ 导入此 cURL").Clicked() {
 						a.importText = a.debugResult.Curl
 						a.showImport = true
-						a.showDebug = false
+						a.mainTab = 0
 					}
 				}
 			})
-
-			ui.Row(c).Gap(8).Children(func() {
-				methods := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}
-				ui.Select(c, &a.debugMethod, methods).Width(100)
-				ui.TextInput(c, &a.debugURL).Placeholder("{{baseUrl}}/path 或完整 URL").Grow(1)
-			})
-
-			ui.Text(c, "请求头 Headers（每行 key: value，支持 {{变量}}）").FontSize(10).TextColor(t.TextMuted)
-			resizableTextArea(c, t, &a.debugHeaders, &a.headersHeight, "Authorization: Bearer {{token}}", 40, 600)
-			ui.Text(c, "查询参数 Query（每行 key: value）").FontSize(10).TextColor(t.TextMuted)
-			resizableTextArea(c, t, &a.debugQuery, &a.queryHeight, "page: 1", 40, 600)
-			ui.Text(c, "请求体 Body（支持 {{变量}}）").FontSize(10).TextColor(t.TextMuted)
-			resizableTextArea(c, t, &a.debugBody, &a.bodyHeight, `{"key": "{{value}}"}`, 40, 800)
-
-			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "认证").FontSize(11).Bold()
-				authTypes := []string{"none", "bearer", "basic"}
-				ui.Select(c, &a.debugAuthType, authTypes).Width(90)
-				if a.debugAuthType == "bearer" {
-					ui.TextInput(c, &a.debugAuthToken).Placeholder("{{token}}").Grow(1)
-				} else if a.debugAuthType == "basic" {
-					ui.TextInput(c, &a.debugUser).Placeholder("用户名").Width(120)
-					ui.TextInput(c, &a.debugPass).Password().Placeholder("密码").Width(120)
+			// 请求行：方法色标 + 方法选择 + URL + 醒目 Send（Postman 标志性布局）。
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				method := a.debugMethod
+				if method == "" {
+					method = "GET"
+				}
+				ui.Box(c).Width(6).Height(30).Radius(3).Background(methodColor(method))
+				ui.Select(c, &a.debugMethod, []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}).Width(96)
+				ui.TextInput(c, &a.debugURL).Placeholder("{{baseUrl}}/path 或完整 URL").Grow(1).Height(30)
+				if ui.PrimaryButton(c, "▶ 发送").Disabled(a.debugSending).Clicked() {
+					a.doDebugSend()
 				}
 			})
+			// 超时与证书：收起为一行小字，默认不占视觉重心。
+			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "超时(秒)").FontSize(10).TextColor(t.TextMuted)
+				ui.TextInput(c, &a.debugTimeout).Width(60)
+				ui.Checkbox(c, &a.debugInsecure, "跳过 TLS 校验")
+			})
 		})
-		ui.Row(c).Gap(10).Padding(8, 14).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "超时(秒)").FontSize(11)
-			ui.TextInput(c, &a.debugTimeout).Width(70)
-			ui.Checkbox(c, &a.debugInsecure, "跳过 TLS 校验")
+		// 配置子标签（Postman：Params / Headers / Body / Authorization）。
+		ui.Row(c).Padding(0, 12).Children(func() {
+			ui.Tabs(c, &a.debugReqTab, "Params", "Headers", "Body", "Authorization")
 			ui.Spacer(c)
-			if ui.Button(c, "清空").Clicked() {
-				a.debugResult = nil
-			}
-			if ui.PrimaryButton(c, "▶ 发送").Disabled(a.debugSending).Clicked() {
-				a.doDebugSend()
+			ui.Text(c, "支持 {{变量}}").FontSize(10).TextColor(t.TextMuted)
+		})
+		ui.Divider(c)
+		ui.Scroll(c).Grow(1).Padding(10, 12, 8, 12).Children(func() {
+			switch a.debugReqTab {
+			case 0: // Params
+				fieldHint(c, t, "查询参数，每行 key: value；发送时拼接到 URL。")
+				resizableTextArea(c, t, &a.debugQuery, &a.queryHeight, "page: 1", 40, 600)
+			case 1: // Headers
+				fieldHint(c, t, "请求头，每行 key: value；可直接粘贴 Chrome 复制的请求头。")
+				resizableTextArea(c, t, &a.debugHeaders, &a.headersHeight, "Authorization: Bearer {{token}}", 40, 600)
+			case 2: // Body
+				fieldHint(c, t, "请求体，支持 JSON/表单文本与 {{变量}}。")
+				resizableTextArea(c, t, &a.debugBody, &a.bodyHeight, `{"key": "{{value}}"}`, 40, 800)
+			case 3: // Authorization
+				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, "认证方式").FontSize(11).Bold()
+					ui.Select(c, &a.debugAuthType, []string{"none", "bearer", "basic"}).Width(100)
+				})
+				fieldHint(c, t, "bearer 填 Token；basic 填用户名与密码。认证头会自动加入请求。")
+				switch a.debugAuthType {
+				case "bearer":
+					ui.TextInput(c, &a.debugAuthToken).Placeholder("{{token}}")
+				case "basic":
+					ui.Row(c).Gap(8).Children(func() {
+						ui.TextInput(c, &a.debugUser).Placeholder("用户名").Grow(1)
+						ui.TextInput(c, &a.debugPass).Password().Placeholder("密码").Grow(1)
+					})
+				}
 			}
 		})
 	})
 }
 
-// debugResponseArea 响应展示区：概览 + 分段视图。
+// debugResponseArea Postman 风格响应区：状态/耗时/大小概览 + 分段标签。
 func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Fill().Children(func() {
 		ui.Row(c).Padding(8, 12).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Segmented(c, &a.debugView, "响应体", "响应头", "Cookie", "cURL")
+			ui.Segmented(c, &a.debugView, "Body", "Headers", "Cookies", "cURL")
 			ui.Spacer(c)
 			if a.debugSending {
 				ui.Text(c, "发送中…").FontSize(11).TextColor(t.Accent)
 			} else if a.debugResult != nil {
 				res := a.debugResult
 				if res.OK {
-					statusColor := t.Accent
+					statusColor := t.Success
 					if res.StatusCode >= 400 {
 						statusColor = t.Danger
 					}
-					ui.Text(c, fmt.Sprintf("● %d %s", res.StatusCode, res.StatusText)).FontSize(11).Bold().TextColor(statusColor)
+					ui.Badge(c, fmt.Sprintf("%d %s", res.StatusCode, res.StatusText)).TextColor(statusColor)
 					ui.Text(c, fmt.Sprintf("%d ms", res.DurationMS)).FontSize(11).TextColor(t.TextMuted)
 					ui.Text(c, fmt.Sprintf("%d B", res.Size)).FontSize(11).TextColor(t.TextMuted)
 				} else {
@@ -535,9 +704,13 @@ func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 				}
 			}
 		})
-		ui.Scroll(c).Grow(1).Padding(0, 12, 10, 12).Children(func() {
+		ui.Divider(c)
+		ui.Scroll(c).Grow(1).Padding(10, 12, 10, 12).Children(func() {
 			if a.debugSending || a.debugResult == nil {
-				ui.Text(c, "配置好请求后点击【发送】，响应将显示在这里。").FontSize(11).TextColor(t.TextMuted)
+				ui.Column(c).Fill().Center().Gap(6).Children(func() {
+					ui.Icon(c, iconSend).Size(24, 24).TextColor(t.TextMuted)
+					ui.Text(c, "配置好请求后点击【发送】，响应将显示在这里。").FontSize(11).TextColor(t.TextMuted)
+				})
 				return
 			}
 			res := a.debugResult
@@ -1574,6 +1747,7 @@ func (a *App) openStepDebug(i int) {
 		a.loadStepToDebug(step)
 		a.log("已载入调试: " + a.stepLabel(*step) + "（可编辑后点【发送】，不自动请求）")
 	} else {
+		a.mainTab = 0
 		a.showDebug = false
 		a.log("已选中 " + a.stepLabel(*step) + "，配置详情显示在右侧编辑区")
 	}
