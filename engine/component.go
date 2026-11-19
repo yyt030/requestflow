@@ -128,6 +128,7 @@ func (e *Engine) runParallel(step model.Step, depth int) error {
 				http:     e.http, // 线程安全（http.Client + CookieJar）
 				onEvent:  e.onEvent,
 				emitMu:   e.emitMu, // 共享事件锁，保证回调串行
+				trace:    e.trace,  // 共享执行记录
 			}
 			for _, child := range task.Steps {
 				if e.stopped() {

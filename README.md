@@ -14,6 +14,10 @@
 - **两种登录态**：Bearer Token 从响应提取到变量后用 `{{token}}` 注入；Cookie 会话由全局 CookieJar 自动跨步骤携带。
 - **循环翻页**：`count`（固定次数）、`foreach`（遍历数组）、`until`（翻到空数据自动停）三种模式，页码变量自动递增。
 - **内置处理 + 自定义脚本**：常用处理逻辑内置；复杂逻辑用脚本直接处理响应，支持 **JavaScript（goja）与 Python（Starlark 子集）双引擎**，编辑器内一键切换。
+- **多格式请求体**：raw（JSON/文本，自动识别 Content-Type）/ form-data（支持文件上传）/ x-www-form-urlencoded / binary（文件路径）/ GraphQL / none 六种 Body 类型，编排步骤与接口调试面板均可配置。
+- **完整认证方式**：none / Bearer Token / Basic / **API Key**（请求头或 URL 参数）/ **OAuth 2.0**（client_credentials 与 password 两种授权，自动换 token 并缓存复用）。
+- **数据驱动运行**：用 CSV / JSON 数据文件逐行运行场景，每行数据注入为变量（覆盖同名全局变量），适合参数化批量测试；GUI「⊞ 数据驱动」按钮选文件即跑，CLI 用 `-data`。
+- **测试报告导出**：汇总每步通过/失败、断言明细、耗时与迭代数据，导出 HTML / JSON 报告；GUI「⤓ 报告」按钮，CLI 用 `-report`。
 - **多格式导出**：xlsx / csv / txt / json。
 - **从 Chrome 一键导入 cURL**：DevTools 中右键请求 → Copy as cURL，粘贴后一键解析成请求步骤，自动识别 Bearer Token、Cookie、查询参数与请求体，支持 bash / cmd / PowerShell 三种格式。
 - **接口调试**：主工作区「接口调试」标签（或双击 HTTP 请求步骤）打开，采用 Postman 经典布局：请求行（方法色标 + 方法 + URL + 醒目「发送」按钮）+ 配置子标签 **Params / Headers / Body / Authorization**；单独发送请求即时查看响应，无需运行整个场景。响应区分 **Body / Headers / Cookies / cURL** 四视图并带状态码/耗时/字节数概览，JSON 自动美化。request 步骤编辑器里还有「⚡ 试发送此请求」按钮，用当前步骤配置（含 `{{变量}}` 渲染）直接调试；调试响应可一键反向生成 cURL 并导回场景。
@@ -37,6 +41,7 @@
 ./requestflow                           # 启动 GUI
 ./requestflow -software                 # Linux 图形异常时强制软件渲染启动 GUI
 ./requestflow -run scenarios/demo.json  # 无界面运行
+./requestflow -run s.json -data users.csv -report report.html  # 数据驱动 + 报告
 ./requestflow -version                  # 查看版本号
 # 或普通编译（版本号为 dev）：
 go build -o requestflow .
@@ -84,9 +89,10 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 ## 设计架构
 
 ```
-┌─ UI 层 (mygo ui) ── 场景/步骤列表 · 步骤编辑器 · 执行日志 ─┐
+┌─ UI 层 (mygo ui) ── 场景/步骤列表 · 步骤编辑器 · 执行日志 · 数据驱动 ─┐
 ├─ 控制层 ── 配置加载/保存(JSON) · 执行调度 · 状态显示 ──────┤
-├─ 执行引擎 ─ 变量上下文 · HTTP执行 · 提取/断言 · 循环 · 处理 · JS脚本 ┤
+├─ 执行引擎 ─ 变量上下文 · HTTP执行(多Body/认证) · 提取/断言 · 循环 · 处理 · JS/Python脚本 ┤
+├─ 报告层 ── 步骤/断言追踪 · HTML/JSON 报告导出 ──────────┤
 └─ 基础设施 ─ net/http+CookieJar · excelize · gjson · goja · starlark ┘
 ```
 
@@ -104,6 +110,50 @@ VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
 **不想手工配请求？** 点工具栏「⇥ 导入 cURL」：在 Chrome 开发者工具 Network 面板右键目标请求 → **Copy → Copy as cURL**，粘贴到面板里点「解析并添加为步骤」。URL、方法、请求头、Cookie、查询参数、请求体自动填好。
 
 **只想调试单个接口？** 切到主工作区「接口调试」标签（或双击编排树里的 HTTP 请求步骤）：请求行是 Postman 风格（方法色标 + 方法选择 + URL + 「▶ 发送」），下方 **Params / Headers / Body / Authorization** 子标签配置请求，下半区即时查看响应，四个标签页分别是**响应体**（JSON 自动美化）、**响应头**、**Cookie**、**cURL**（当前请求反向生成的命令，可一键导回场景）。URL、Header、Body 都支持 `{{变量}}`，自动套用场景环境变量。如果在编排模式下想快速验证某个 request 步骤，可直接在步骤编辑器点「⚡ 试发送此请求」，会自动载入该步骤配置并发起调试。
+
+### 请求体与认证（Postman 风格）
+
+request 步骤与接口调试面板都支持完整的 Body 类型，在「Body 类型」下拉切换：
+
+| 类型 | 说明 |
+|---|---|
+| `none` | 无请求体 |
+| `raw` | 原始文本（JSON / XML / 任意文本），JSON 自动设 `Content-Type: application/json`，支持 `{{变量}}` |
+| `form-data` |  multipart 表单，逐行添加字段；字段类型选 `file` 时填本地文件路径即可上传文件 |
+| `urlencoded` | `application/x-www-form-urlencoded` 表单 |
+| `binary` | 填写文件路径，按 `application/octet-stream` 发送二进制 |
+| `graphql` | 填 Query 与 Variables（JSON），自动包装成 `{"query":...,"variables":...}` |
+
+认证在「认证方式」下拉选择：`none` / `bearer` / `basic` / `apikey` / `oauth2`。
+
+- **API Key**：填参数名与值，并选放在请求头（`header`，默认）还是 URL 查询参数（`query`）。
+- **OAuth 2.0**：填 Token URL、Client ID / Secret、Scope 与授权类型（`client_credentials` 默认，或 `password` 时另填用户名密码）。执行时自动 POST 换取 `access_token` 并以 Bearer 注入；**同一凭据会缓存复用**、临近过期自动刷新，无需每步重复获取。
+
+### 数据驱动运行
+
+把测试数据放进 CSV 或 JSON 文件，一次运行 N 行、每行注入为变量：
+
+```csv
+keyword,expected
+apple,200
+banana,200
+```
+
+```json
+[ {"keyword":"apple","expected":200}, {"keyword":"banana","expected":200} ]
+```
+
+- GUI：点工具栏「⊞ 数据驱动」选择文件，立即逐行运行，日志与「运行结果」标签按迭代展示（数据文件名/变量名与场景全局变量同名时，**数据行优先**）。
+- CLI：`requestflow -run scene.json -data users.csv`。JSON 顶层支持对象数组或 `{"data":[...]}` 包裹；非字符串值自动转字符串。
+- 每次迭代是**独立引擎**（独立 CookieJar 与变量上下文），互不影响；某一行失败不阻断后续行，最后汇总通过/失败数。
+
+### 测试报告导出
+
+执行完成后点工具栏「⤓ 报告」（或 CLI 加 `-report report.html`）。报告汇总：总迭代数 / 通过 / 失败 / 通过率 / 总耗时，每一轮的**步骤记录**（类型、状态、耗时、错误）、**断言明细**（来源、期望、实际、结果）与结束时变量。扩展名 `.json` 导出结构化 JSON，其它导出可直接浏览器打开的 HTML。CLI 数据驱动与报告可组合：
+
+```bash
+requestflow -run scene.json -data users.csv -report result.html
+```
 
 ### 步骤间如何衔接 + 条件分支
 
@@ -313,10 +363,11 @@ main.go            入口（GUI / -run 无界面 / -version），启动时初始
 console_windows.go Windows 平台：GUI 模式隐藏控制台黑框（build tag）
 console_other.go   非 Windows 平台的空实现（build tag）
 model/model.go     数据模型
-engine/            执行引擎 + cURL 解析器 + 接口调试 + JS/Python 双脚本引擎 + 单元测试 + 端到端回归测试
+engine/            执行引擎 + cURL 解析器 + 接口调试 + JS/Python 双脚本引擎 + 数据驱动(dataset) + 执行追踪(trace) + 单元测试 + 端到端回归测试
 engine/testdata/   回归场景 JSON（占位符 BASE/OUT 运行时替换）
 logger/            默认文件日志（GUI/无界面共用）+ 单元测试
-ui/app.go          mygo 原生界面（步骤选中/双击调试/日志落盘）
+report/            测试报告：步骤/断言汇总 → HTML/JSON 导出 + 单元测试
+ui/app.go          mygo 原生界面（步骤选中/双击调试/日志落盘/数据驱动/报告导出）
 version/version.go 版本信息（构建期注入）+ 单元测试
 build.sh           自动注入版本号的构建脚本
 pack.sh            打包脚本（默认 windows/amd64，tar.gz + 图标 + sha256）

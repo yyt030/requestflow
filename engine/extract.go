@@ -107,22 +107,64 @@ func jsonValue(r gjson.Result) interface{} {
 	}
 }
 
-// applyAsserts 对响应执行断言。全部通过返回 nil。
+// AssertDetail 单个断言的结构化结果，供测试报告使用。
+type AssertDetail struct {
+	StepName string `json:"stepName,omitempty"`
+	StepID   string `json:"stepId,omitempty"`
+	Name     string `json:"name"`
+	Source   string `json:"source"`
+	Op       string `json:"op"`
+	Expected string `json:"expected"`
+	Actual   string `json:"actual"`
+	Passed   bool   `json:"passed"`
+	Detail   string `json:"detail"`
+}
+
+// applyAsserts 对响应执行断言。全部通过返回 nil（兼容旧调用）。
 func applyAsserts(ctx *Context, resp *model.Response, asserts []model.Assert) error {
+	_, err := applyAssertsDetailed(ctx, resp, asserts)
+	return err
+}
+
+// applyAssertsDetailed 执行断言并返回每条的结构化结果。遇到第一条失败即返回。
+func applyAssertsDetailed(ctx *Context, resp *model.Response, asserts []model.Assert) ([]AssertDetail, error) {
+	details := make([]AssertDetail, 0, len(asserts))
 	for _, a := range asserts {
 		ok, detail, err := assertOne(ctx, resp, a)
 		if err != nil {
-			return err
+			return details, err
 		}
+		name := a.Name
+		if name == "" {
+			name = a.Source
+		}
+		expected := ctx.Render(a.Value)
+		details = append(details, AssertDetail{
+			Name:     name,
+			Source:   a.Source,
+			Op:       a.Op,
+			Expected: expected,
+			Passed:   ok,
+			Detail:   detail,
+		})
 		if !ok {
-			name := a.Name
-			if name == "" {
-				name = a.Source
-			}
-			return fmt.Errorf("断言失败 [%s]: %s", name, detail)
+			// 从 detail 中解析实际值（detail 形如 实际="x", 期望 ...）
+			details[len(details)-1].Actual = parseActual(detail)
+			return details, fmt.Errorf("断言失败 [%s]: %s", name, detail)
 		}
 	}
-	return nil
+	return details, nil
+}
+
+// parseActual 从断言详情文本中提取实际值（尽力而为，仅用于报告展示）。
+func parseActual(detail string) string {
+	if strings.HasPrefix(detail, "实际=") {
+		if i := strings.Index(detail, ", 期望"); i > 0 {
+			s := detail[len("实际="):i]
+			return strings.Trim(s, `"`)
+		}
+	}
+	return ""
 }
 
 func assertOne(ctx *Context, resp *model.Response, a model.Assert) (bool, string, error) {

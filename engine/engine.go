@@ -27,6 +27,9 @@ type Result struct {
 	Vars     map[string]interface{}
 	Started  time.Time
 	Ended    time.Time
+	// 报告用结构化记录（TraceLog 为空时为空切片）
+	Steps      []StepTrace    `json:"steps,omitempty"`
+	Assertions []AssertDetail `json:"assertions,omitempty"`
 }
 
 // Engine 场景执行引擎。
@@ -44,6 +47,9 @@ type Engine struct {
 	// localCtx 标记该 Engine 是否使用外部注入的上下文（并行子任务为 true），
 	// 用于避免子任务污染父场景的变量命名空间。
 	localCtx bool
+
+	// trace 收集步骤/断言记录；并行子任务共享同一个 trace。
+	trace *TraceLog
 }
 
 func NewEngine(sc *model.Scenario, onEvent func(Event)) *Engine {
@@ -58,6 +64,7 @@ func NewEngine(sc *model.Scenario, onEvent func(Event)) *Engine {
 		http:     NewHTTPClient(timeout, true),
 		onEvent:  onEvent,
 		emitMu:   &sync.Mutex{},
+		trace:    &TraceLog{},
 	}
 }
 
@@ -71,6 +78,9 @@ func (e *Engine) emit(typ, stepID, stepName, msg string) {
 
 // Context 暴露运行时上下文，便于运行后检查变量。
 func (e *Engine) Context() *Context { return e.ctx }
+
+// Trace 暴露结构化执行记录（供报告使用）。
+func (e *Engine) Trace() *TraceLog { return e.trace }
 
 // Stop 请求在当前步骤后停止。
 func (e *Engine) Stop() { atomic.StoreInt32(&e.stopFlag, 1) }
@@ -98,6 +108,9 @@ func (e *Engine) Run() *Result {
 	}
 	res.Ended = time.Now()
 	res.Vars = e.ctx.Snapshot()
+	if e.trace != nil {
+		res.Steps, res.Assertions = e.trace.Snapshot()
+	}
 	if res.Err == nil {
 		res.OK = true
 		e.emit("done", "", "", "执行完成")
@@ -106,7 +119,22 @@ func (e *Engine) Run() *Result {
 }
 
 // runStep 执行单步，depth 为循环嵌套层级。
-func (e *Engine) runStep(step model.Step, depth int) error {
+func (e *Engine) runStep(step model.Step, depth int) (retErr error) {
+	started := time.Now()
+	defer func() {
+		if e.trace != nil {
+			trace := StepTrace{
+				Name: step.Name, Type: step.Type,
+				Status: "pass", Started: started, Ended: time.Now(),
+			}
+			trace.DurationMS = trace.Ended.Sub(started).Milliseconds()
+			if retErr != nil {
+				trace.Status = "fail"
+				trace.Err = retErr.Error()
+			}
+			e.trace.addStep(trace)
+		}
+	}()
 	e.emit("step-start", step.ID, step.Name, "开始")
 	var err error
 	switch step.Type {
@@ -139,7 +167,9 @@ func (e *Engine) runStep(step model.Step, depth int) error {
 			e.emit("log", step.ID, step.Name, "已导出: "+path)
 		}
 	case model.StepAssert:
-		err = applyAsserts(e.ctx, e.lastResp, step.Assert)
+		details, detErr := applyAssertsDetailed(e.ctx, e.lastResp, step.Assert)
+		e.trace.addAssertions(step.Name, step.ID, details)
+		err = detErr
 	default:
 		err = fmt.Errorf("未知步骤类型: %s", step.Type)
 	}
@@ -168,15 +198,35 @@ func (e *Engine) runRequest(step model.Step) error {
 	headers := e.ctx.RenderMap(step.Headers)
 	query := e.ctx.RenderMap(step.Query)
 	body := e.ctx.Render(step.Body)
-	authStep := model.Step{
-		AuthType:  e.ctx.Render(step.AuthType),
-		AuthToken: e.ctx.Render(step.AuthToken),
-		AuthUser:  e.ctx.Render(step.AuthUser),
-		AuthPass:  e.ctx.Render(step.AuthPass),
+	// 构造渲染后的完整请求 step：携带 Body 类型 / 表单 / GraphQL / 认证全部字段。
+	reqStep := model.Step{
+		BodyType:         e.ctx.Render(step.BodyType),
+		Body:             body,
+		GraphQLQuery:     e.ctx.Render(step.GraphQLQuery),
+		GraphQLVariables: e.ctx.Render(step.GraphQLVariables),
+		AuthType:         e.ctx.Render(step.AuthType),
+		AuthToken:        e.ctx.Render(step.AuthToken),
+		AuthUser:         e.ctx.Render(step.AuthUser),
+		AuthPass:         e.ctx.Render(step.AuthPass),
+		AuthKeyName:      e.ctx.Render(step.AuthKeyName),
+		AuthKeyValue:     e.ctx.Render(step.AuthKeyValue),
+		AuthKeyIn:        e.ctx.Render(step.AuthKeyIn),
+		AuthTokenURL:     e.ctx.Render(step.AuthTokenURL),
+		AuthClientID:     e.ctx.Render(step.AuthClientID),
+		AuthClientSecret: e.ctx.Render(step.AuthClientSecret),
+		AuthScope:        e.ctx.Render(step.AuthScope),
+		AuthGrantType:    e.ctx.Render(step.AuthGrantType),
+	}
+	for _, f := range step.FormData {
+		reqStep.FormData = append(reqStep.FormData, model.FormField{
+			Key:   e.ctx.Render(f.Key),
+			Type:  f.Type,
+			Value: e.ctx.Render(f.Value),
+		})
 	}
 
 	e.emit("log", step.ID, step.Name, fmt.Sprintf("%s %s", method, rawURL))
-	resp, err := e.http.Do(method, rawURL, headers, query, body, &authStep)
+	resp, err := e.http.DoRequest(&reqStep, method, rawURL, headers, query)
 	if err != nil {
 		return err
 	}
@@ -186,8 +236,10 @@ func (e *Engine) runRequest(step model.Step) error {
 	if err := applyExtracts(e.ctx, resp, step.Extract); err != nil {
 		return err
 	}
-	if err := applyAsserts(e.ctx, resp, step.Assert); err != nil {
-		return err
+	details, detErr := applyAssertsDetailed(e.ctx, resp, step.Assert)
+	e.trace.addAssertions(step.Name, step.ID, details)
+	if detErr != nil {
+		return detErr
 	}
 	e.ctx.SetStepResponse(step.Name, responseView(resp))
 	return nil

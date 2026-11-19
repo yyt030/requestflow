@@ -18,6 +18,7 @@ import (
 	"requestflow/engine"
 	"requestflow/logger"
 	"requestflow/model"
+	"requestflow/report"
 	"requestflow/version"
 )
 
@@ -127,6 +128,12 @@ type App struct {
 	currentEng   *engine.Engine
 	engMu        sync.RWMutex // 保护 currentEng 的跨 goroutine 读写
 
+	// 数据驱动运行
+	dataFile       string               // 数据文件路径（CSV/JSON）
+	dataResults    []engine.DatasetResult // 迭代结果
+	dataRunning    bool
+	showDataPanel  bool
+
 	// 编辑器临时缓冲（避免每帧写入模型）
 	editName   string
 	editMethod string
@@ -169,10 +176,22 @@ type App struct {
 	debugHeaders  string // 每行 key: value
 	debugQuery    string // 每行 key: value
 	debugBody     string
-	debugAuthType string
-	debugAuthToken string
-	debugUser     string
-	debugPass     string
+	debugBodyType string // raw | form-data | urlencoded | binary | graphql | none
+	debugFormData []model.FormField // 表单字段（key/type/value）
+	debugGQLQuery string
+	debugGQLVars  string
+	debugAuthType    string
+	debugAuthToken   string
+	debugUser        string
+	debugPass        string
+	debugKeyName     string // apikey 参数名
+	debugKeyValue    string // apikey 参数值
+	debugKeyIn       string // header | query
+	debugTokenURL    string // oauth2 token url
+	debugClientID    string
+	debugClientSecret string
+	debugScope       string
+	debugGrantType   string // client_credentials | password
 	debugTimeout  string
 	debugInsecure bool
 	debugView     int // 0=美化响应 1=响应头 2=Cookie 3=cURL
@@ -186,6 +205,7 @@ type App struct {
 	queryHeight   float32
 	bodyHeight    float32
 	importHeight  float32
+	gqlVarsHeight float32
 }
 
 // Run 启动 GUI。
@@ -198,12 +218,16 @@ func Run() {
 		splitDebug:    360,
 		debugMethod:   "GET",
 		debugAuthType: "none",
+		debugBodyType: "raw",
+		debugKeyIn:    "header",
+		debugGrantType: "client_credentials",
 		debugTimeout:  "30",
 		headersHeight: 56,
 		queryHeight:   56,
 		bodyHeight:    72,
-		importHeight:  200,
-		showSteps:     true,
+	importHeight:  200,
+	gqlVarsHeight: 90,
+	showSteps:     true,
 		showVars:      true,
 	}
 	app.logs = append(app.logs, "就绪。打开或新建场景，配置步骤后点击【一键运行】。")
@@ -293,6 +317,13 @@ func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
 			a.showImport = true
 			a.importMsg = ""
 			a.mainTab = 0
+		}
+		ui.Divider(c).Height(20)
+		if ui.Button(c, "⊞ 数据驱动").Tooltip("用 CSV/JSON 数据逐行运行场景").Clicked() {
+			a.pickDataFile()
+		}
+		if ui.Button(c, "⤓ 报告").Tooltip("导出测试报告 (HTML)").Disabled(a.lastResult == nil && len(a.dataResults) == 0).Clicked() {
+			a.exportReport()
 		}
 		if ui.Button(c, "ⓘ").Tooltip("关于 RequestFlow " + version.Short()).Clicked() {
 			a.showAbout()
@@ -696,23 +727,12 @@ func (a *App) debugRequestArea(c *ui.Context, t *ui.Theme) {
 				fieldHint(c, t, "请求头，每行 key: value；可直接粘贴 Chrome 复制的请求头。")
 				resizableTextArea(c, t, &a.debugHeaders, &a.headersHeight, "Authorization: Bearer {{token}}", 40, 600)
 			case 2: // Body
-				fieldHint(c, t, "请求体，支持 JSON/表单文本与 {{变量}}。")
-				resizableTextArea(c, t, &a.debugBody, &a.bodyHeight, `{"key": "{{value}}"}`, 40, 800)
+				bodyEditor(c, t, &a.debugBodyType, &a.debugBody, &a.debugFormData,
+					&a.debugGQLQuery, &a.debugGQLVars, &a.bodyHeight, `{"key": "{{value}}"}`)
 			case 3: // Authorization
-				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, "认证方式").FontSize(11).Bold()
-					ui.Select(c, &a.debugAuthType, []string{"none", "bearer", "basic"}).Width(100)
-				})
-				fieldHint(c, t, "bearer 填 Token；basic 填用户名与密码。认证头会自动加入请求。")
-				switch a.debugAuthType {
-				case "bearer":
-					ui.TextInput(c, &a.debugAuthToken).Placeholder("{{token}}")
-				case "basic":
-					ui.Row(c).Gap(8).Children(func() {
-						ui.TextInput(c, &a.debugUser).Placeholder("用户名").Grow(1)
-						ui.TextInput(c, &a.debugPass).Password().Placeholder("密码").Grow(1)
-					})
-				}
+				authEditor(c, t, &a.debugAuthType, &a.debugAuthToken, &a.debugUser, &a.debugPass,
+					&a.debugKeyName, &a.debugKeyValue, &a.debugKeyIn,
+					&a.debugTokenURL, &a.debugClientID, &a.debugClientSecret, &a.debugScope, &a.debugGrantType)
 			}
 		})
 	})
@@ -794,17 +814,29 @@ func (a *App) doDebugSend() {
 		vars[k] = v
 	}
 	req := engine.DebugRequest{
-		Method:      a.debugMethod,
-		URL:         a.debugURL,
-		Headers:     stringToMap(a.debugHeaders, ":"),
-		Query:       stringToMap(a.debugQuery, ":"),
-		Body:        a.debugBody,
-		AuthType:    a.debugAuthType,
-		AuthToken:   a.debugAuthToken,
-		AuthUser:    a.debugUser,
-		AuthPass:    a.debugPass,
-		TimeoutSec:  timeout,
-		InsecureTLS: a.debugInsecure,
+		Method:           a.debugMethod,
+		URL:              a.debugURL,
+		Headers:          stringToMap(a.debugHeaders, ":"),
+		Query:            stringToMap(a.debugQuery, ":"),
+		Body:             a.debugBody,
+		BodyType:         a.debugBodyType,
+		FormData:         a.debugFormData,
+		GraphQLQuery:     a.debugGQLQuery,
+		GraphQLVariables: a.debugGQLVars,
+		AuthType:         a.debugAuthType,
+		AuthToken:        a.debugAuthToken,
+		AuthUser:         a.debugUser,
+		AuthPass:         a.debugPass,
+		AuthKeyName:      a.debugKeyName,
+		AuthKeyValue:     a.debugKeyValue,
+		AuthKeyIn:        a.debugKeyIn,
+		AuthTokenURL:     a.debugTokenURL,
+		AuthClientID:     a.debugClientID,
+		AuthClientSecret: a.debugClientSecret,
+		AuthScope:        a.debugScope,
+		AuthGrantType:    a.debugGrantType,
+		TimeoutSec:       timeout,
+		InsecureTLS:      a.debugInsecure,
 	}
 	a.debugSending = true
 	a.debugResult = nil
@@ -832,6 +864,13 @@ func (a *App) loadStepToDebug(step *model.Step) {
 	a.debugHeaders = mapToString(step.Headers)
 	a.debugQuery = mapToString(step.Query)
 	a.debugBody = step.Body
+	a.debugBodyType = step.BodyType
+	if a.debugBodyType == "" {
+		a.debugBodyType = "raw"
+	}
+	a.debugFormData = append([]model.FormField(nil), step.FormData...)
+	a.debugGQLQuery = step.GraphQLQuery
+	a.debugGQLVars = step.GraphQLVariables
 	a.debugAuthType = step.AuthType
 	if a.debugAuthType == "" {
 		a.debugAuthType = "none"
@@ -839,6 +878,20 @@ func (a *App) loadStepToDebug(step *model.Step) {
 	a.debugAuthToken = step.AuthToken
 	a.debugUser = step.AuthUser
 	a.debugPass = step.AuthPass
+	a.debugKeyName = step.AuthKeyName
+	a.debugKeyValue = step.AuthKeyValue
+	a.debugKeyIn = step.AuthKeyIn
+	if a.debugKeyIn == "" {
+		a.debugKeyIn = "header"
+	}
+	a.debugTokenURL = step.AuthTokenURL
+	a.debugClientID = step.AuthClientID
+	a.debugClientSecret = step.AuthClientSecret
+	a.debugScope = step.AuthScope
+	a.debugGrantType = step.AuthGrantType
+	if a.debugGrantType == "" {
+		a.debugGrantType = "client_credentials"
+	}
 	a.debugTimeout = "30"
 	a.showDebug = true
 	a.debugResult = nil
@@ -995,8 +1048,8 @@ func (a *App) editorRequest(c *ui.Context, t *ui.Theme, step *model.Step) {
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, "请求体 Body").FontSize(11).Bold()
 	})
-	fieldHint(c, t, "支持 {{变量}}；GET 通常留空，POST/PUT 填写 JSON 或表单文本。")
-	ui.TextArea(c, &step.Body).Height(90)
+	bodyEditor(c, t, &step.BodyType, &step.Body, &step.FormData,
+		&step.GraphQLQuery, &step.GraphQLVariables, &a.bodyHeight, `{"key": "{{value}}"}`)
 
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		if ui.Button(c, "⚡ 试发送此请求").Clicked() {
@@ -1007,24 +1060,9 @@ func (a *App) editorRequest(c *ui.Context, t *ui.Theme, step *model.Step) {
 
 	ui.Divider(c)
 	ui.Text(c, "认证").FontSize(12).Bold()
-	fieldHint(c, t, "为当前请求注入鉴权信息；none 表示不认证。")
-	authTypes := []string{"none", "bearer", "basic"}
-	at := step.AuthType
-	if at == "" {
-		at = "none"
-	}
-	// 认证类型与凭据同一行，避免竖向堆叠。
-	ui.Row(c).Gap(8).AlignItems(ui.Start).Children(func() {
-		if ui.Select(c, &at, authTypes).Label("类型").Width(120).Changed() {
-			step.AuthType = at
-		}
-		if at == "bearer" {
-			ui.TextInput(c, &step.AuthToken).Placeholder("{{token}}").Label("Bearer Token").Grow(1)
-		} else if at == "basic" {
-			ui.TextInput(c, &step.AuthUser).Placeholder("用户名").Label("用户名").Grow(1)
-			ui.TextInput(c, &step.AuthPass).Password().Placeholder("密码").Label("密码").Grow(1)
-		}
-	})
+	authEditor(c, t, &step.AuthType, &step.AuthToken, &step.AuthUser, &step.AuthPass,
+		&step.AuthKeyName, &step.AuthKeyValue, &step.AuthKeyIn,
+		&step.AuthTokenURL, &step.AuthClientID, &step.AuthClientSecret, &step.AuthScope, &step.AuthGrantType)
 
 	ui.Divider(c)
 	a.editorExtract(c, t, step)
@@ -1593,7 +1631,17 @@ func (a *App) console(c *ui.Context, t *ui.Theme) {
 		ui.Row(c).Padding(8, 10).Gap(10).AlignItems(ui.Center).Children(func() {
 			ui.Segmented(c, &a.consoleView, "日志", "结果表", "变量")
 			ui.Spacer(c)
-			if a.lastResult != nil {
+			if len(a.dataResults) > 0 {
+				passed, failed := 0, 0
+				for _, r := range a.dataResults {
+					if r.Result != nil && r.Result.OK {
+						passed++
+					} else {
+						failed++
+					}
+				}
+				ui.Text(c, fmt.Sprintf("数据驱动 %d 轮 · %d 通过 / %d 失败", len(a.dataResults), passed, failed)).FontSize(11).TextColor(t.Accent)
+			} else if a.lastResult != nil {
 				label := "✓ 成功"
 				if !a.lastResult.OK {
 					label = "✗ 失败"
@@ -1936,9 +1984,117 @@ func (a *App) saveTo(path string) {
 	a.log("已保存: " + path)
 }
 
+// pickDataFile 选择数据文件后立即启动数据驱动运行。
+func (a *App) pickDataFile() {
+	go func() {
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+			Title:   "选择数据文件 (CSV/JSON)",
+			Filters: []mygo.FileFilter{{Name: "数据文件", Extensions: []string{"csv", "json", "txt"}}},
+		})
+		if err != nil || len(paths) == 0 {
+			return
+		}
+		mygo.RunOnMain(func() {
+			a.dataFile = paths[0]
+			a.runDataDriven()
+		})
+	}()
+}
+
+// runDataDriven 用选中的数据集逐行运行场景，结果展示在运行结果标签。
+func (a *App) runDataDriven() {
+	if a.dataFile == "" || a.running || a.dataRunning {
+		return
+	}
+	rows, err := engine.LoadDataset(a.dataFile)
+	if err != nil {
+		a.log("[数据驱动] 加载失败: " + err.Error())
+		mygo.Dialog.Error("数据文件加载失败", err.Error())
+		return
+	}
+	a.dataRunning = true
+	a.dataResults = nil
+	a.resetResult()
+	a.mainTab = 2
+	a.log(fmt.Sprintf("=== 数据驱动开始: %s (%d 行) ===", filepath.Base(a.dataFile), len(rows)))
+	sc := cloneScenario(a.scenario)
+	go func() {
+		results := engine.RunDataset(sc, rows, func(ie engine.IterationEvent) {
+			msg := ie.Event.Message
+			if msg == "" {
+				return
+			}
+			mygo.RunOnMain(func() {
+				a.log(fmt.Sprintf("[迭代%d] %s", ie.Iteration, msg))
+			})
+		})
+		mygo.RunOnMain(func() {
+			a.dataRunning = false
+			a.dataResults = results
+			passed, failed := 0, 0
+			for _, r := range results {
+				if r.Result != nil && r.Result.OK {
+					passed++
+				} else {
+					failed++
+				}
+				status := "成功"
+				if r.Result == nil || !r.Result.OK {
+					status = "失败"
+				}
+				a.log(fmt.Sprintf("迭代 %d/%d: %s", r.Index, len(results), status))
+			}
+			a.log(fmt.Sprintf("=== 数据驱动完成: 通过 %d / 失败 %d ===", passed, failed))
+			// 保留最后一次迭代结果，供结果表/变量视图与报告使用
+			if len(results) > 0 {
+				a.lastResult = results[len(results)-1].Result
+				a.runOK = a.lastResult != nil && a.lastResult.OK
+			}
+		})
+	}()
+}
+
+// exportReport 导出测试报告（HTML）。数据驱动时导出全部迭代汇总。
+func (a *App) exportReport() {
+	var rd *report.Data
+	if len(a.dataResults) > 0 {
+		rd = report.NewFromDataset(a.dataResults)
+	} else if a.lastResult != nil {
+		rd = report.NewFromResult(a.lastResult)
+	} else {
+		return
+	}
+	go func() {
+		def := "requestflow-report.html"
+		if rd.Scenario != "" {
+			def = rd.Scenario + "-报告.html"
+		}
+		path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+			Title:       "导出测试报告",
+			DefaultPath: def,
+			ButtonLabel: "保存",
+			Filters:     []mygo.FileFilter{{Name: "HTML 报告", Extensions: []string{"html"}}},
+		})
+		if err != nil || path == "" {
+			return
+		}
+		if err := report.Save(rd, path); err != nil {
+			mygo.RunOnMain(func() {
+				mygo.Dialog.Error("导出失败", err.Error())
+				a.log("[报告] 导出失败: " + err.Error())
+			})
+			return
+		}
+		mygo.RunOnMain(func() {
+			a.log("[报告] 已导出: " + path)
+		})
+	}()
+}
+
 func (a *App) run() {
 	a.running = true
 	a.runOK = false
+	a.dataResults = nil
 	a.resetResult()
 	a.log("=== 开始执行: " + a.scenario.Name + " ===")
 	sc := cloneScenario(a.scenario)
@@ -2114,6 +2270,170 @@ func mapToString(m map[string]string) string {
 // 以行内最先出现的 ":" 或 "=" 作为分隔符且只切一次，确保值里的 "=" 不会被误当分隔符
 // （Cookie、Bearer token 等经常含 "="）。以 ":" 开头的 HTTP/2 伪头（:authority、:method 等）
 // 会被跳过——Go 的 HTTP 客户端不接受这类头。
+// bodyTypes 请求体类型下拉选项（Postman 风格）。
+var bodyTypes = []string{"none", "raw", "form-data", "urlencoded", "binary", "graphql"}
+
+// authTypes 认证方式下拉选项。
+var authTypes = []string{"none", "bearer", "basic", "apikey", "oauth2"}
+
+// bodyEditor 渲染请求体类型选择 + 对应编辑控件。 pointers 让步骤编辑器与调试面板复用。
+func bodyEditor(c *ui.Context, t *ui.Theme, bodyType *string, body *string, form *[]model.FormField,
+	gqlQuery *string, gqlVars *string, height *float32, placeholder string) {
+	bt := *bodyType
+	if bt == "" {
+		bt = "raw"
+	}
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, "Body 类型").FontSize(11).Bold()
+		if ui.Select(c, &bt, bodyTypes).Width(130).Changed() {
+			*bodyType = bt
+		}
+	})
+	switch strings.ToLower(bt) {
+	case "none", "raw", "binary":
+		hint := "支持 {{变量}}；JSON 会自动设 Content-Type。"
+		if bt == "binary" {
+			hint = "填写要上传的文件路径，以 application/octet-stream 发送。"
+		}
+		fieldHint(c, t, hint)
+		resizableTextArea(c, t, body, height, placeholder, 40, 800)
+	case "form-data", "urlencoded":
+		fieldHint(c, t, "逐行添加字段；类型选 file 时值为本地文件路径（form-data 支持上传）。")
+		fields := *form
+		for i := range fields {
+			f := &fields[i]
+			idx := i
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+				ui.TextInput(c, &f.Key).Placeholder("字段名").Width(130)
+				ft := f.Type
+				if ft == "" {
+					ft = "text"
+				}
+				if bt == "urlencoded" {
+					ft = "text" // urlencoded 无文件类型
+				}
+				if ui.Select(c, &ft, []string{"text", "file"}).Width(76).Changed() {
+					f.Type = ft
+				}
+				ui.TextInput(c, &f.Value).Placeholder("值或文件路径").Grow(1)
+				if ui.Button(c.Key("delf"), "×").Width(26).Clicked() {
+					*form = append(fields[:idx], fields[idx+1:]...)
+				}
+			})
+		}
+		if ui.Button(c, "+ 添加字段").Clicked() {
+			*form = append(fields, model.FormField{Type: "text"})
+		}
+	case "graphql":
+		fieldHint(c, t, "Query 填写 GraphQL 查询；Variables 为 JSON 对象（可留空 {}）。")
+		ui.Text(c, "Query").FontSize(10).TextColor(t.TextMuted)
+		resizableTextArea(c, t, gqlQuery, height, "query { me { id } }", 40, 600)
+		ui.Text(c, "Variables (JSON)").FontSize(10).TextColor(t.TextMuted)
+		ui.TextArea(c, gqlVars).Placeholder("{}").Height(80)
+	}
+}
+
+// authEditor 渲染认证方式选择与对应凭据输入，复用指针以兼容步骤编辑器与调试面板。
+func authEditor(c *ui.Context, t *ui.Theme, authType *string, token, user, pass *string,
+	keyName, keyValue, keyIn *string, tokenURL, clientID, clientSecret, scope, grantType *string) {
+	at := *authType
+	if at == "" {
+		at = "none"
+	}
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, "认证方式").FontSize(11).Bold()
+		if ui.Select(c, &at, authTypes).Width(130).Changed() {
+			*authType = at
+		}
+	})
+	fieldHint(c, t, "认证头/参数自动加入请求；none 表示不认证。")
+	switch strings.ToLower(at) {
+	case "bearer":
+		ui.TextInput(c, token).Placeholder("{{token}}").Label("Bearer Token")
+	case "basic":
+		ui.Row(c).Gap(8).Children(func() {
+			ui.TextInput(c, user).Placeholder("用户名").Label("用户名").Grow(1)
+			ui.TextInput(c, pass).Password().Placeholder("密码").Label("密码").Grow(1)
+		})
+	case "apikey":
+		fieldHint(c, t, "在请求头或 URL 查询参数中加入指定的 Key。")
+		ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
+			ui.TextInput(c, keyName).Placeholder("如 X-API-Key").Label("参数名").Grow(1)
+			ki := *keyIn
+			if ki == "" {
+				ki = "header"
+			}
+			if ui.Select(c, &ki, []string{"header", "query"}).Width(96).Label("位置").Changed() {
+				*keyIn = ki
+			}
+		})
+		ui.TextInput(c, keyValue).Placeholder("{{apiKey}}").Label("参数值")
+	case "oauth2":
+		fieldHint(c, t, "自动向 Token URL 换取 access_token 并以 Bearer 注入；同一凭据会缓存复用。")
+		ui.TextInput(c, tokenURL).Placeholder("https://api.example.com/oauth/token").Label("Token URL")
+		ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
+			gt := *grantType
+			if gt == "" {
+				gt = "client_credentials"
+			}
+			if ui.Select(c, &gt, []string{"client_credentials", "password"}).Width(170).Label("授权类型").Changed() {
+				*grantType = gt
+			}
+			ui.TextInput(c, scope).Placeholder("可选，如 read write").Label("Scope").Grow(1)
+		})
+		ui.Row(c).Gap(8).Children(func() {
+			ui.TextInput(c, clientID).Placeholder("Client ID").Label("Client ID").Grow(1)
+			ui.TextInput(c, clientSecret).Password().Placeholder("Client Secret").Label("Client Secret").Grow(1)
+		})
+		if strings.EqualFold(*grantType, "password") {
+			ui.Row(c).Gap(8).Children(func() {
+				ui.TextInput(c, user).Placeholder("用户名").Label("用户名").Grow(1)
+				ui.TextInput(c, pass).Password().Placeholder("密码").Label("密码").Grow(1)
+			})
+		}
+	}
+}
+
+// formDataToString 把表单字段序列化为多行文本，值以 @ 开头表示文件字段。
+func formDataToString(fields []model.FormField) string {
+	lines := make([]string, 0, len(fields))
+	for _, f := range fields {
+		v := f.Value
+		if strings.EqualFold(f.Type, "file") && !strings.HasPrefix(v, "@") {
+			v = "@" + v
+		}
+		lines = append(lines, f.Key+": "+v)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// stringToFormData 解析表单文本：每行 key: value；值以 @ 开头视为文件路径（Type=file）。
+func stringToFormData(s string) []model.FormField {
+	out := []model.FormField{}
+	for _, raw := range strings.Split(s, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		i := strings.IndexAny(line, ":=")
+		if i <= 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:i])
+		val := strings.TrimSpace(line[i+1:])
+		if key == "" {
+			continue
+		}
+		f := model.FormField{Key: key, Type: "text", Value: val}
+		if strings.HasPrefix(val, "@") && len(val) > 1 {
+			f.Type = "file"
+			f.Value = strings.TrimSpace(val[1:])
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
 func stringToMap(s, _ string) map[string]string {
 	out := map[string]string{}
 	for _, raw := range strings.Split(s, "\n") {

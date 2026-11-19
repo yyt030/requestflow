@@ -48,11 +48,28 @@ type Step struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	Query   map[string]string `json:"query,omitempty"`
 	Body    string            `json:"body,omitempty"`
+
+	// Body 类型：raw（默认，兼容旧场景）| form-data | urlencoded | binary | graphql | none
+	BodyType         string      `json:"bodyType,omitempty"`
+	FormData         []FormField `json:"formData,omitempty"`
+	GraphQLQuery     string      `json:"graphqlQuery,omitempty"`
+	GraphQLVariables string      `json:"graphqlVariables,omitempty"`
+
 	// Auth: bearer token 从变量读取（如 {{token}}）；cookie 由全局 CookieJar 自动管理
-	AuthType  string `json:"authType,omitempty"` // none | bearer | basic
+	AuthType  string `json:"authType,omitempty"` // none | bearer | basic | apikey | oauth2
 	AuthToken string `json:"authToken,omitempty"` // bearer: "{{token}}"
 	AuthUser  string `json:"authUser,omitempty"`
 	AuthPass  string `json:"authPass,omitempty"`
+	// apikey 认证
+	AuthKeyName  string `json:"authKeyName,omitempty"`  // header/query 参数名
+	AuthKeyValue string `json:"authKeyValue,omitempty"` // 参数值（支持 {{变量}}）
+	AuthKeyIn    string `json:"authKeyIn,omitempty"`    // header（默认）| query
+	// oauth2 认证（client_credentials / password）
+	AuthTokenURL   string `json:"authTokenUrl,omitempty"`
+	AuthClientID   string `json:"authClientId,omitempty"`
+	AuthClientSecret string `json:"authClientSecret,omitempty"`
+	AuthScope      string `json:"authScope,omitempty"`
+	AuthGrantType  string `json:"authGrantType,omitempty"` // client_credentials（默认）| password
 
 	Extract []Extract `json:"extract,omitempty"`
 	Assert  []Assert  `json:"assert,omitempty"`
@@ -88,6 +105,14 @@ type Step struct {
 	// --- 通用 ---
 	Children []Step `json:"children,omitempty"` // loop 的子步骤
 	ContinueOnFail bool `json:"continueOnFail,omitempty"`
+}
+
+// FormField form-data / x-www-form-urlencoded 的单个字段。
+// Type 为 "text"（默认）时 Value 为字段文本；为 "file" 时 Value 为要上传的文件路径。
+type FormField struct {
+	Key   string `json:"key"`
+	Type  string `json:"type,omitempty"`  // text | file
+	Value string `json:"value,omitempty"` // 文本值或文件路径
 }
 
 // Extract 从响应中提取一个变量。
