@@ -52,6 +52,9 @@ var (
 		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M3 2.5h8.5L13.5 5v8.5h-11z"/><path d="M5 2.5v4h6v-4M5 13.5v-4h6v4"/></svg>`))
 	iconImport = ui.MustParseSVG([]byte(
 		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 11.5V14h10v-2.5"/></svg>`))
+	// 文件树：通用文件图标（步骤作为文件节点，用类型色着色）。
+	iconFile = ui.MustParseSVG([]byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M4 1.8h5l3 3v9.4H4z"/><path d="M9 1.8v3h3"/></svg>`))
 )
 
 // Postman 风格配色：品牌橙与 HTTP 方法的语义色。
@@ -137,7 +140,8 @@ type App struct {
 
 	// "新建步骤"菜单
 	adding     bool
-	stepSearch string // 左侧 Collection 步骤搜索过滤
+	stepSearch string // 左侧文件树步骤搜索过滤
+	showSteps  bool   // 文件树"步骤"文件夹节点是否展开
 
 	// 底部控制台视图：0=日志 1=结果表 2=变量
 	consoleView int
@@ -199,6 +203,8 @@ func Run() {
 		queryHeight:   56,
 		bodyHeight:    72,
 		importHeight:  200,
+		showSteps:     true,
+		showVars:      true,
 	}
 	app.logs = append(app.logs, "就绪。打开或新建场景，配置步骤后点击【一键运行】。")
 	mygo.App.WhenReady(func() {
@@ -323,49 +329,82 @@ func (a *App) showAbout() {
 	}()
 }
 
-// ---------- 左侧：Collection 风格场景导航 ----------
+// ---------- 左侧：文件树风格场景导航 ----------
 func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Fill().Children(func() {
-		// 集合标题栏：Collection 名 + 新建步骤。
+		// 面板标题栏。
 		ui.Row(c).Padding(12, 12, 8, 12).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, iconFolder).Size(16, 16).TextColor(brandOrange)
-			ui.Text(c, "Collections").FontSize(13).Bold()
+			ui.Text(c, "资源管理器").FontSize(13).Bold()
 			ui.Spacer(c)
-			ui.Text(c, fmt.Sprintf("%d 个步骤", len(a.scenario.Steps))).FontSize(10).TextColor(t.TextMuted)
+			ui.Text(c, fmt.Sprintf("%d 项", len(a.scenario.Steps))).FontSize(10).TextColor(t.TextMuted)
 		})
 		// 搜索框：过滤步骤。
 		ui.Row(c).Padding(0, 12, 10, 12).Children(func() {
 			ui.SearchField(c, &a.stepSearch).Placeholder("搜索步骤…")
 		})
-		// 场景集合根节点：名称。
-		ui.Row(c).Padding(6, 12, 6, 12).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "▾").FontSize(10).TextColor(t.TextMuted)
-			ui.Icon(c, iconFolder).Size(14, 14).TextColor(brandOrange)
-			ui.TextInput(c, &a.scenario.Name).FontSize(13).Bold().Grow(1)
-		})
-		ui.Divider(c)
-		// 步骤导航树：带类型色图标、选中态导航条。
-		ui.Scroll(c).Grow(1).Padding(4, 8, 8, 8).Children(func() {
-			a.stepList(c, t)
-		})
-		ui.Divider(c)
-		// 全局变量（可折叠，Postman 的 Variables 概念）。
-		ui.Column(c).Padding(8, 8, 10, 8).Gap(4).Children(func() {
-			ui.Row(c).AlignItems(ui.Center).Children(func() {
-				if ui.Button(c, map[bool]string{true: "▾", false: "▸"}[a.showVars]+"  环境变量").Clicked() {
-					a.showVars = !a.showVars
-				}
-				ui.Text(c, fmt.Sprintf("(%d)", len(a.scenario.Variables))).FontSize(10).TextColor(t.TextMuted)
-				ui.Spacer(c)
-				if iconButton(c, t, "addvar", iconPlus, "新增变量", 22, t.Text).Clicked() {
-					a.showVars = true
-				}
-			})
-			if a.showVars {
-				a.variablesEditor(c, t)
-			}
+		// 文件树根节点区。
+		ui.Scroll(c).Grow(1).Padding(2, 8, 10, 8).Children(func() {
+			a.fileTree(c, t)
 		})
 	})
+}
+
+// fileTree 文件树：场景（步骤）与环境变量两棵可折叠文件夹节点。
+func (a *App) fileTree(c *ui.Context, t *ui.Theme) {
+	// 根文件夹：场景 —— 子节点是各个步骤。
+	a.treeFolderRow(c, t, "folder-scene", &a.showSteps, iconFolder, brandOrange, func() {
+		ui.TextInput(c, &a.scenario.Name).FontSize(13).Bold().Grow(1)
+	}, nil)
+	if a.showSteps {
+		treeGuide(c, t, func() { a.stepList(c, t) })
+	}
+
+	ui.Box(c).Height(8)
+
+	// 根文件夹：环境变量 —— 子节点是各个变量。
+	a.treeFolderRow(c, t, "folder-vars", &a.showVars, iconFolder, t.TextMuted, func() {
+		ui.Text(c, "环境变量").FontSize(12).Bold()
+		ui.Text(c, fmt.Sprintf("(%d)", len(a.scenario.Variables))).FontSize(10).TextColor(t.TextMuted)
+	}, func() {
+		if iconButton(c, t, "addvar", iconPlus, "新增变量", 20, t.Text).Clicked() {
+			a.showVars = true
+		}
+	})
+	if a.showVars {
+		treeGuide(c, t, func() { a.variablesEditor(c, t) })
+	}
+}
+
+// treeFolderRow 文件夹节点行：展开箭头 + 文件夹图标 + 标题内容 + 尾部操作。
+func (a *App) treeFolderRow(c *ui.Context, t *ui.Theme, key string, open *bool, icon *ui.SVG, iconColor ui.Color, label func(), tail func()) {
+	ui.Row(c.Key(key)).Gap(4).Padding(5, 4).AlignItems(ui.Center).Children(func() {
+		arrow := map[bool]string{true: "▾", false: "▸"}[*open]
+		if ui.Button(c.Key("tog"), arrow).Width(16).FontSize(10).Clicked() {
+			*open = !*open
+		}
+		ui.Icon(c, icon).Size(14, 14).TextColor(iconColor)
+		label()
+		ui.Spacer(c)
+		if tail != nil {
+			tail()
+		}
+	})
+}
+
+// treeGuide 在子节点左侧画一条贯穿高度的竖线，形成文件树的层级引导线。
+func treeGuide(c *ui.Context, t *ui.Theme, fn func()) {
+	color := t.Border.Mix(t.Surface, 0.2)
+	ui.Row(c).AlignItems(ui.Stretch).Children(func() {
+		ui.Box(c).Width(14)                         // 缩进占位（透明）
+		ui.Box(c).Width(1).Background(color)        // 竖线：被 Stretch 拉满整棵子树高度
+		ui.Column(c).Grow(1).Children(fn)
+	})
+}
+
+// treeBranch 子节点行首的横折线（与 guide 竖线相接，形成 ├─ 效果）。
+func treeBranch(c *ui.Context, t *ui.Theme) {
+	ui.Box(c).Width(10).Height(1).Background(t.Border.Mix(t.Surface, 0.2))
 }
 
 // variablesEditor 可视化编辑全局变量（key=value），直接读写 scenario.Variables。
@@ -460,23 +499,26 @@ func (a *App) stepList(c *ui.Context, t *ui.Theme) {
 			step := &steps[idx]
 			selected := idx == a.selectedStep
 			sc := stepColors[step.Type]
-			ui.Row(c.Key(fmt.Sprintf("step-%d", idx))).Gap(4).Padding(3, 6).Radius(6).
+			ui.Row(c.Key(fmt.Sprintf("step-%d", idx))).Gap(4).Padding(2, 6).Radius(6).
 				AlignItems(ui.Center).Children(func() {
-					if selected {
-						ui.Box(c).Width(3).Height(20).Radius(2).Background(t.Accent)
-					} else {
-						ui.Box(c).Width(3).Height(20)
+					// 文件树横折线 ├─，与上层 guide 竖线相接。
+					treeBranch(c, t)
+					// 类型色文件图标本身兼作启停开关：彩色=启用、淡化=禁用，点击切换。
+					iconColor := sc
+					enableTip := "点击禁用此步骤"
+					if !step.Enabled {
+						iconColor = t.TextMuted
+						enableTip = "点击启用此步骤"
 					}
-					// 类型色圆点兼作启用开关：实心=启用、空心=禁用。
-					// Postman 风格不额外占一个勾选框，点击即可启停步骤。
-					dot := ui.ButtonBase(c.Key("en")).Size(10, 10).Radius(5).
-						Tooltip(map[bool]string{true: "点击禁用此步骤", false: "点击启用此步骤"}[step.Enabled])
-					if step.Enabled {
-						dot.Background(sc)
-					} else {
-						dot.Border(1, t.TextMuted)
+					fileIconBtn := ui.ButtonBase(c.Key("en")).Size(16, 16).Radius(4).
+						Tooltip(enableTip).Cursor(ui.CursorPointer)
+					fileIconBtn.Children(func() {
+						ui.Icon(c, iconFile).Size(13, 13).TextColor(iconColor)
+					})
+					if fileIconBtn.Hovered() {
+						fileIconBtn.Background(t.SurfaceHover)
 					}
-					if dot.Clicked() {
+					if fileIconBtn.Clicked() {
 						step.Enabled = !step.Enabled
 					}
 					name := step.Name
@@ -510,13 +552,14 @@ func (a *App) stepList(c *ui.Context, t *ui.Theme) {
 				})
 		}
 	}
-	// Collection 底部：新建步骤入口（展开类型菜单）。
-	ui.Row(c).Padding(6, 6, 2, 6).Children(func() {
-		label := "+ 新建步骤"
+	// 文件树底部：新建步骤入口（展开类型菜单），同样带横折线。
+	ui.Row(c).Gap(4).Padding(2, 6).AlignItems(ui.Center).Children(func() {
+		treeBranch(c, t)
+		label := "＋ 新建步骤"
 		if a.adding {
 			label = "− 收起"
 		}
-		if ui.Button(c, label).Clicked() {
+		if ui.Button(c, label).Grow(1).TextColor(t.TextMuted).Clicked() {
 			a.adding = !a.adding
 		}
 	})
