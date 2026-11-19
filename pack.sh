@@ -86,19 +86,26 @@ rm -f rsrc_windows_*.syso
 cp README.md "$STAGE/"
 cp scenarios/*.json "$STAGE/scenarios/"
 
-# Windows 下直接双击即可用 GUI；命令行用法写进包内说明
+# 包内使用说明：按平台生成对应的可执行文件名与运行方式
+if [[ "$GOOS_T" == "windows" ]]; then
+  RUNBIN="requestflow.exe"
+  GUI_TIP="双击 $RUNBIN"
+else
+  RUNBIN="./requestflow"
+  GUI_TIP="在图形桌面环境中执行 $RUNBIN（无桌面环境可用下文的 -run 无界面模式）"
+fi
 cat > "$STAGE/使用说明.txt" <<EOF
 RequestFlow $ver
 ========================================
 
 【运行 GUI】
-  双击 requestflow.exe
+  $GUI_TIP
 
 【无界面运行示例】
-  requestflow.exe -run scenarios/demo.json
+  $RUNBIN -run scenarios/demo.json
 
 【查看版本】
-  requestflow.exe -version
+  $RUNBIN -version
 
 将 scenarios/ 下的 JSON 场景复制到任意位置，用 GUI 的「打开」加载即可。
 场景为纯文本 JSON，可纳入版本管理、跨机器复用。
