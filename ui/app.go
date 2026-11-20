@@ -63,7 +63,7 @@ var (
 
 // Postman 风格配色：品牌橙与 HTTP 方法的语义色。
 var (
-	brandOrange = ui.RGB(255, 108, 55) // Postman 标志橙
+	brandOrange  = ui.RGB(255, 108, 55) // Postman 标志橙
 	methodColors = map[string]ui.Color{
 		"GET": ui.RGB(97, 175, 254), "POST": ui.RGB(73, 204, 144),
 		"PUT": ui.RGB(252, 161, 48), "PATCH": ui.RGB(80, 227, 194),
@@ -71,7 +71,7 @@ var (
 	}
 	// 步骤类型图标色，让左侧 Collection 树一眼区分组件类型。
 	stepColors = map[model.StepType]ui.Color{
-		model.StepRequest: ui.RGB(97, 175, 254), model.StepLoop: ui.RGB(144, 18, 254),
+		model.StepRequest: ui.RGB(97, 175, 254), model.StepTCP: ui.RGB(34, 197, 94), model.StepLoop: ui.RGB(144, 18, 254),
 		model.StepBranch: ui.RGB(252, 161, 48), model.StepSwitch: ui.RGB(80, 227, 194),
 		model.StepParallel: ui.RGB(59, 130, 246), model.StepMerge: ui.RGB(59, 130, 246),
 		model.StepProcess: ui.RGB(148, 163, 184), model.StepScript: ui.RGB(234, 179, 8),
@@ -119,7 +119,7 @@ func stepToolButton(c *ui.Context, t *ui.Theme, key string, icon *ui.SVG, tip st
 
 // App 保存界面所有可变状态。view 是纯函数：从状态构建界面。
 type App struct {
-	win     *mygo.Window
+	win      *mygo.Window
 	scenario *model.Scenario
 	filePath string
 
@@ -132,10 +132,10 @@ type App struct {
 	engMu        sync.RWMutex // 保护 currentEng 的跨 goroutine 读写
 
 	// 数据驱动运行
-	dataFile       string               // 数据文件路径（CSV/JSON）
-	dataResults    []engine.DatasetResult // 迭代结果
-	dataRunning    bool
-	showDataPanel  bool
+	dataFile      string                 // 数据文件路径（CSV/JSON）
+	dataResults   []engine.DatasetResult // 迭代结果
+	dataRunning   bool
+	showDataPanel bool
 
 	// 编辑器临时缓冲（避免每帧写入模型）
 	editName   string
@@ -156,9 +156,9 @@ type App struct {
 	// 底部控制台视图：0=日志 1=结果表 2=变量
 	consoleView int
 	// 结果表：选中的数组变量名与表格状态
-	resultVar    string
-	resultState  ui.ListState
-	resultCols   []ui.TableColumn
+	resultVar   string
+	resultState ui.ListState
+	resultCols  []ui.TableColumn
 	// 全局变量编辑
 	showVars    bool
 	newVarKey   string
@@ -173,35 +173,35 @@ type App struct {
 	mainTab int
 
 	// 接口调试面板
-	showDebug     bool // 兼容旧动作：请求双击时置 true；view 里同步到 mainTab=1
-	debugMethod   string
-	debugURL      string
-	debugHeaders  string // 每行 key: value
-	debugQuery    string // 每行 key: value
-	debugBody     string
-	debugBodyType string // raw | form-data | urlencoded | binary | graphql | none
-	debugFormData []model.FormField // 表单字段（key/type/value）
-	debugGQLQuery string
-	debugGQLVars  string
-	debugAuthType    string
-	debugAuthToken   string
-	debugUser        string
-	debugPass        string
-	debugKeyName     string // apikey 参数名
-	debugKeyValue    string // apikey 参数值
-	debugKeyIn       string // header | query
-	debugTokenURL    string // oauth2 token url
-	debugClientID    string
+	showDebug         bool // 兼容旧动作：请求双击时置 true；view 里同步到 mainTab=1
+	debugMethod       string
+	debugURL          string
+	debugHeaders      string // 每行 key: value
+	debugQuery        string // 每行 key: value
+	debugBody         string
+	debugBodyType     string            // raw | form-data | urlencoded | binary | graphql | none
+	debugFormData     []model.FormField // 表单字段（key/type/value）
+	debugGQLQuery     string
+	debugGQLVars      string
+	debugAuthType     string
+	debugAuthToken    string
+	debugUser         string
+	debugPass         string
+	debugKeyName      string // apikey 参数名
+	debugKeyValue     string // apikey 参数值
+	debugKeyIn        string // header | query
+	debugTokenURL     string // oauth2 token url
+	debugClientID     string
 	debugClientSecret string
-	debugScope       string
-	debugGrantType   string // client_credentials | password
-	debugTimeout  string
-	debugInsecure bool
-	debugView     int // 0=美化响应 1=响应头 2=Cookie 3=cURL
-	debugReqTab   int // 0=Params 1=Headers 2=Body 3=Auth（Postman 风格子标签）
-	debugResult   *engine.DebugResult
-	debugSending  bool
-	splitDebug    float32
+	debugScope        string
+	debugGrantType    string // client_credentials | password
+	debugTimeout      string
+	debugInsecure     bool
+	debugView         int // 0=美化响应 1=响应头 2=Cookie 3=cURL
+	debugReqTab       int // 0=Params 1=Headers 2=Body 3=Auth（Postman 风格子标签）
+	debugResult       *engine.DebugResult
+	debugSending      bool
+	splitDebug        float32
 
 	// 调试面板文本框高度（可拖拽调整）
 	headersHeight float32
@@ -211,52 +211,54 @@ type App struct {
 	gqlVarsHeight float32
 
 	// 环境变量分层：当前选中的环境名 + 新增环境变量缓冲
-	activeEnvBuf  string
-	newEnvName    string
+	activeEnvBuf string
+	newEnvName   string
 
 	// 代码生成 Code Snippet：语言选择 + 生成结果缓存
 	snippetLang string
 	snippetText string
 
 	// 请求历史：显示开关 + 缓存列表
-	showHistory  bool
-	historyList  []history.Entry
-	historyMsg   string
+	showHistory      bool
+	historyList      []history.Entry
+	historyMsg       string
 	preScriptHeight  float32
 	postScriptHeight float32
+	tcpSendHeight    float32
 }
 
 // Run 启动 GUI。
 func Run() {
 	app := &App{
-		scenario:      demoScenario(),
-		selectedStep:  -1,
-		splitSide:     280,
-		splitLog:      220,
-		splitDebug:    360,
-		debugMethod:   "GET",
-		debugAuthType: "none",
-		debugBodyType: "raw",
-		debugKeyIn:    "header",
-		debugGrantType: "client_credentials",
-		debugTimeout:  "30",
-		headersHeight: 56,
-		queryHeight:   56,
-		bodyHeight:    72,
-		importHeight:  200,
-		gqlVarsHeight: 90,
+		scenario:         demoScenario(),
+		selectedStep:     -1,
+		splitSide:        280,
+		splitLog:         220,
+		splitDebug:       360,
+		debugMethod:      "GET",
+		debugAuthType:    "none",
+		debugBodyType:    "raw",
+		debugKeyIn:       "header",
+		debugGrantType:   "client_credentials",
+		debugTimeout:     "30",
+		headersHeight:    56,
+		queryHeight:      56,
+		bodyHeight:       72,
+		importHeight:     200,
+		gqlVarsHeight:    90,
 		preScriptHeight:  72,
 		postScriptHeight: 72,
-		snippetLang:       "python",
-		showSteps:     true,
-		showVars:      true,
+		tcpSendHeight:    56,
+		snippetLang:      "python",
+		showSteps:        true,
+		showVars:         true,
 	}
 	app.logs = append(app.logs, "就绪。打开或新建场景，配置步骤后点击【一键运行】。")
 	mygo.App.WhenReady(func() {
 		app.win = mygo.NewWindow(mygo.WindowOptions{
-			Title:  "RequestFlow " + version.Short() + " · HTTP 流程自动化",
-			Width:  1180,
-			Height: 780,
+			Title:   "RequestFlow " + version.Short() + " · request流程自动化",
+			Width:   1180,
+			Height:  780,
 			Content: ui.View(app.view),
 		})
 	})
@@ -311,7 +313,7 @@ func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
 		})
 		ui.Column(c).Gap(0).Children(func() {
 			ui.Text(c, "RequestFlow").FontSize(14).Bold()
-			ui.Text(c, "HTTP 流程自动化").FontSize(9).TextColor(t.TextMuted)
+			ui.Text(c, "request流程自动化").FontSize(9).TextColor(t.TextMuted)
 		})
 		ui.Divider(c).Height(24)
 		// 当前场景名（工作区概念）。
@@ -510,7 +512,7 @@ func (a *App) envVariablesEditor(c *ui.Context, t *ui.Theme, vars map[string]str
 		for _, k := range keys {
 			key := k
 			val := vars[key]
-			ui.Row(c.Key("envvar-"+key)).Gap(4).AlignItems(ui.Center).Children(func() {
+			ui.Row(c.Key("envvar-" + key)).Gap(4).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, key).FontSize(11).Width(78).SingleLine()
 				input := val
 				if ui.TextInput(c, &input).Grow(1).Changed() {
@@ -556,8 +558,8 @@ func (a *App) treeFolderRow(c *ui.Context, t *ui.Theme, key string, open *bool, 
 func treeGuide(c *ui.Context, t *ui.Theme, fn func()) {
 	color := t.Border.Mix(t.Surface, 0.2)
 	ui.Row(c).AlignItems(ui.Stretch).Children(func() {
-		ui.Box(c).Width(14)                         // 缩进占位（透明）
-		ui.Box(c).Width(1).Background(color)        // 竖线：被 Stretch 拉满整棵子树高度
+		ui.Box(c).Width(14)                  // 缩进占位（透明）
+		ui.Box(c).Width(1).Background(color) // 竖线：被 Stretch 拉满整棵子树高度
 		ui.Column(c).Grow(1).Children(fn)
 	})
 }
@@ -583,7 +585,7 @@ func (a *App) variablesEditor(c *ui.Context, t *ui.Theme) {
 		for _, k := range keys {
 			key := k
 			val := a.scenario.Variables[key]
-			ui.Row(c.Key("var-"+key)).Gap(4).AlignItems(ui.Center).Children(func() {
+			ui.Row(c.Key("var-" + key)).Gap(4).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, key).FontSize(11).Width(78).SingleLine()
 				input := val
 				if ui.TextInput(c, &input).Grow(1).Changed() {
@@ -616,13 +618,14 @@ func (a *App) addMenu(c *ui.Context, t *ui.Theme) {
 			label string
 			typ   model.StepType
 		}{
-		{"HTTP 请求", model.StepRequest},
-		{"条件分支", model.StepBranch},
-		{"多分支 switch", model.StepSwitch},
-		{"循环 / 翻页", model.StepLoop},
-		{"并行扇出", model.StepParallel},
-		{"扇入合并(门控)", model.StepMerge},
-		{"内置处理", model.StepProcess},
+			{"HTTP 请求", model.StepRequest},
+			{"TCP Socket", model.StepTCP},
+			{"条件分支", model.StepBranch},
+			{"多分支 switch", model.StepSwitch},
+			{"循环 / 翻页", model.StepLoop},
+			{"并行扇出", model.StepParallel},
+			{"扇入合并(门控)", model.StepMerge},
+			{"内置处理", model.StepProcess},
 			{"自定义脚本", model.StepScript},
 			{"独立断言", model.StepAssert},
 			{"导出结果", model.StepExport},
@@ -661,55 +664,55 @@ func (a *App) stepList(c *ui.Context, t *ui.Theme) {
 			sc := stepColors[step.Type]
 			ui.Row(c.Key(fmt.Sprintf("step-%d", idx))).Gap(4).Padding(2, 6).Radius(6).
 				AlignItems(ui.Center).Children(func() {
-					// 文件树横折线 ├─，与上层 guide 竖线相接。
-					treeBranch(c, t)
-					// 类型色文件图标本身兼作启停开关：彩色=启用、淡化=禁用，点击切换。
-					iconColor := sc
-					enableTip := "点击禁用此步骤"
-					if !step.Enabled {
-						iconColor = t.TextMuted
-						enableTip = "点击启用此步骤"
-					}
-					fileIconBtn := ui.ButtonBase(c.Key("en")).Size(16, 16).Radius(4).
-						Tooltip(enableTip).Cursor(ui.CursorPointer)
-					fileIconBtn.Children(func() {
-						ui.Icon(c, iconFile).Size(13, 13).TextColor(iconColor)
-					})
-					if fileIconBtn.Hovered() {
-						fileIconBtn.Background(t.SurfaceHover)
-					}
-					if fileIconBtn.Clicked() {
-						step.Enabled = !step.Enabled
-					}
-					name := step.Name
-					if name == "" {
-						name = string(step.Type)
-					}
-					b := ui.Button(c, name).Grow(1).
-						Tooltip("单击选中并配置；双击 HTTP 请求进入调试")
-					if selected {
-						b = b.Background(t.Accent.Mix(t.Surface, 0.86)).TextColor(t.Accent).Bold()
-					}
-					if !step.Enabled {
-						b = b.TextColor(t.TextMuted)
-					}
-					if b.Clicked() {
-						a.selectStep(idx)
-					}
-					if b.DoubleClicked() {
-						a.selectStep(idx)
-						a.openStepDebug(idx)
-					}
-					if stepToolButton(c, t, "up", iconMoveUp, "上移步骤", idx == 0, false).Clicked() {
-						a.moveStep(idx, -1)
-					}
-					if stepToolButton(c, t, "dn", iconMoveDown, "下移步骤", idx == len(steps)-1, false).Clicked() {
-						a.moveStep(idx, 1)
-					}
-					if stepToolButton(c, t, "del", iconDelete, "删除步骤", false, true).Clicked() {
-						a.deleteStep(idx)
-					}
+				// 文件树横折线 ├─，与上层 guide 竖线相接。
+				treeBranch(c, t)
+				// 类型色文件图标本身兼作启停开关：彩色=启用、淡化=禁用，点击切换。
+				iconColor := sc
+				enableTip := "点击禁用此步骤"
+				if !step.Enabled {
+					iconColor = t.TextMuted
+					enableTip = "点击启用此步骤"
+				}
+				fileIconBtn := ui.ButtonBase(c.Key("en")).Size(16, 16).Radius(4).
+					Tooltip(enableTip).Cursor(ui.CursorPointer)
+				fileIconBtn.Children(func() {
+					ui.Icon(c, iconFile).Size(13, 13).TextColor(iconColor)
 				})
+				if fileIconBtn.Hovered() {
+					fileIconBtn.Background(t.SurfaceHover)
+				}
+				if fileIconBtn.Clicked() {
+					step.Enabled = !step.Enabled
+				}
+				name := step.Name
+				if name == "" {
+					name = string(step.Type)
+				}
+				b := ui.Button(c, name).Grow(1).
+					Tooltip("单击选中并配置；双击 HTTP 请求进入调试")
+				if selected {
+					b = b.Background(t.Accent.Mix(t.Surface, 0.86)).TextColor(t.Accent).Bold()
+				}
+				if !step.Enabled {
+					b = b.TextColor(t.TextMuted)
+				}
+				if b.Clicked() {
+					a.selectStep(idx)
+				}
+				if b.DoubleClicked() {
+					a.selectStep(idx)
+					a.openStepDebug(idx)
+				}
+				if stepToolButton(c, t, "up", iconMoveUp, "上移步骤", idx == 0, false).Clicked() {
+					a.moveStep(idx, -1)
+				}
+				if stepToolButton(c, t, "dn", iconMoveDown, "下移步骤", idx == len(steps)-1, false).Clicked() {
+					a.moveStep(idx, 1)
+				}
+				if stepToolButton(c, t, "del", iconDelete, "删除步骤", false, true).Clicked() {
+					a.deleteStep(idx)
+				}
+			})
 		}
 	}
 	// 文件树底部：新建步骤入口（展开类型菜单），同样带横折线。
@@ -730,7 +733,7 @@ func (a *App) stepList(c *ui.Context, t *ui.Theme) {
 
 func (a *App) stepLabel(s model.Step) string {
 	icon := map[model.StepType]string{
-		model.StepRequest: "⇄", model.StepLoop: "↻", model.StepBranch: "分", model.StepSwitch: "选",
+		model.StepRequest: "⇄", model.StepTCP: "TCP", model.StepLoop: "↻", model.StepBranch: "分", model.StepSwitch: "选",
 		model.StepParallel: "扇出", model.StepMerge: "扇入", model.StepProcess: "⚙",
 		model.StepScript: "JS", model.StepAssert: "✓", model.StepExport: "⇩",
 	}[s.Type]
@@ -776,6 +779,8 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 			switch step.Type {
 			case model.StepRequest:
 				a.editorRequest(c, t, step)
+			case model.StepTCP:
+				a.editorTCP(c, t, step)
 			case model.StepLoop:
 				a.editorLoop(c, t, step)
 			case model.StepBranch:
@@ -1221,7 +1226,7 @@ func (a *App) loadHistoryToDebug(e history.Entry) {
 func (a *App) importAPIFile() {
 	go func() {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
-			Title:   "选择 API 定义文件（Postman / OpenAPI / Swagger）",
+			Title: "选择 API 定义文件（Postman / OpenAPI / Swagger）",
 			Filters: []mygo.FileFilter{
 				{Name: "API 定义", Extensions: []string{"json"}},
 				{Name: "所有文件", Extensions: []string{"*"}},
@@ -1411,6 +1416,135 @@ func (a *App) editorRequestScripts(c *ui.Context, t *ui.Theme, step *model.Step)
 	})
 }
 
+// tcpFrameTypeLabels 是帧头类型下拉的中文展示项；存盘值由 tcpFrameTypeValue 映射为英文。
+var tcpFrameTypeLabels = []string{"不启用", "字符串头(位数自定义,左补零)", "1字节二进制头(≤255)", "2字节二进制头(64K)"}
+
+func tcpFrameTypeLabel(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "ascii", "ascii8", "string", "string8":
+		return "字符串头(位数自定义,左补零)"
+	case "bin1", "binary1", "byte":
+		return "1字节二进制头(≤255)"
+	case "bin2", "binary2", "binary":
+		return "2字节二进制头(64K)"
+	default:
+		return "不启用"
+	}
+}
+
+func tcpFrameTypeValue(label string) string {
+	switch label {
+	case "字符串头(位数自定义,左补零)":
+		return "ascii"
+	case "1字节二进制头(≤255)":
+		return "bin1"
+	case "2字节二进制头(64K)":
+		return "bin2"
+	default:
+		return ""
+	}
+}
+
+// editorTCP TCP Socket 步骤配置：连接参数、长短连接、帧头类型、发送数据、读取策略、提取与断言。
+func (a *App) editorTCP(c *ui.Context, t *ui.Theme, step *model.Step) {
+	ui.Text(c, "连接目标").FontSize(12).Bold()
+	fieldHint(c, t, "连接 TCP 服务端。主机与端口支持 {{变量}}；如需 TLS 加密勾选 TLS。keepalive 填探测周期秒数（如 30），0=关闭（默认）。")
+	ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
+		ui.TextInput(c, &step.TCPHost).Placeholder("127.0.0.1 或 {{host}}").Grow(2).Label("主机 Host")
+		ui.TextInput(c, &step.TCPPort).Placeholder("8080").Grow(1).Label("端口 Port")
+		ui.TextInput(c, &step.TCPKeepAlive).Placeholder("0=关闭, 如 30").Grow(1).Label("Keepalive(秒)")
+		ui.Checkbox(c, &step.TCPTLS, "TLS")
+	})
+
+	ui.Divider(c)
+	ui.Text(c, "连接模式（长连接 / 短连接）").FontSize(12).Bold()
+	fieldHint(c, t, "short=短连接，每步独立建立、发完即关；long=长连接，按「连接名」跨步骤复用同一 socket，场景结束自动关闭。勾选「关闭连接」可显式释放指定长连接。")
+	ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
+		connModes := []string{"short", "long"}
+		cmode := step.TCPConnMode
+		if cmode == "" {
+			cmode = "short"
+		}
+		if ui.Select(c, &cmode, connModes).Label("连接模式").Width(140).Changed() {
+			step.TCPConnMode = cmode
+		}
+		ui.TextInput(c, &step.TCPConnKey).Placeholder("留空为默认连接").Grow(1).Label("连接名 (long 复用键)")
+		ui.Checkbox(c, &step.TCPClose, "关闭连接")
+	})
+
+	ui.Divider(c)
+	ui.Text(c, "帧头类型（发送/读取选 frame 时生效）").FontSize(12).Bold()
+	fieldHint(c, t, "字符串头：位数可自定义（如 3/5/8），十进制长度字面值不足左补零，如 8 位头+8 字节报文→00000008。1 字节二进制头：最大 255 字节。2 字节二进制头：最大 65535 字节（64K-1），可切换字节序。")
+	ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
+		ftype := step.TCPFrameType
+		if ftype == "" && strings.TrimSpace(step.TCPFrameHead) != "" {
+			ftype = "ascii" // 兼容旧场景：仅配置了位数时按 ascii 展示
+		}
+		ftypeLabel := tcpFrameTypeLabel(ftype)
+		if ui.Select(c, &ftypeLabel, tcpFrameTypeLabels).Label("帧头类型").Width(230).Changed() {
+			step.TCPFrameType = tcpFrameTypeValue(ftypeLabel)
+			if step.TCPFrameType == "" {
+				step.TCPFrameHead = "" // 防止旧位数触发兼容推断，令“不启用”失效
+			}
+		}
+		switch ftype {
+		case "ascii":
+			ui.TextInput(c, &step.TCPFrameHead).Placeholder("8").Grow(1).Label("位数 (如 3/5/8)")
+		case "bin2":
+			endianLabel := "大端 (网络序)"
+			if strings.EqualFold(strings.TrimSpace(step.TCPFrameEndian), "little") {
+				endianLabel = "小端"
+			}
+			if ui.Select(c, &endianLabel, []string{"大端 (网络序)", "小端"}).Label("字节序").Width(140).Changed() {
+				if endianLabel == "小端" {
+					step.TCPFrameEndian = "little"
+				} else {
+					step.TCPFrameEndian = "big"
+				}
+			}
+		}
+	})
+
+	ui.Divider(c)
+	ui.Text(c, "发送数据").FontSize(12).Bold()
+	fieldHint(c, t, "支持 {{变量}} 与转义 \\n \\r\\n \\t \\xNN。line=末尾补换行；raw=原样；hex=十六进制；frame=按上方所选帧头类型（字符串头位数自定义 / 1 字节 / 2 字节二进制）自动加长度头。")
+	ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
+		sendModes := []string{"line", "raw", "hex", "frame"}
+		mode := step.TCPSendMode
+		if mode == "" {
+			mode = "line"
+		}
+		if ui.Select(c, &mode, sendModes).Label("发送模式").Width(150).Changed() {
+			step.TCPSendMode = mode
+		}
+		ui.Spacer(c)
+	})
+	resizableTextArea(c, t, &step.TCPSend, &a.tcpSendHeight,
+		"例如：{\"cmd\":\"ping\"} 或 HELLO", 56, 400)
+
+	ui.Divider(c)
+	ui.Text(c, "读取响应").FontSize(12).Bold()
+	fieldHint(c, t, "line=读一行；all=读到连接关闭/超时；fixed=读固定字节；until=读到结束标记；frame=按上方所选帧头类型先读长度头再读定长报文。响应以文本供提取/断言使用。")
+	ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
+		readModes := []string{"line", "all", "fixed", "until", "frame"}
+		rmode := step.TCPReadMode
+		if rmode == "" {
+			rmode = "line"
+		}
+		if ui.Select(c, &rmode, readModes).Label("读取模式").Width(150).Changed() {
+			step.TCPReadMode = rmode
+		}
+		ui.TextInput(c, &step.TCPReadNum).Placeholder("如 1024").Grow(1).Label("字节数 (fixed)")
+		ui.TextInput(c, &step.TCPUntil).Placeholder("如 \\n 或 >").Grow(1).Label("结束标记 (until)")
+		ui.TextInput(c, &step.TCPTimeout).Placeholder("5000").Grow(1).Label("超时 ms")
+	})
+
+	ui.Divider(c)
+	a.editorRequestScripts(c, t, step)
+	a.editorExtract(c, t, step)
+	a.editorAssertList(c, t, step)
+}
+
 func (a *App) editorExtract(c *ui.Context, t *ui.Theme, step *model.Step) {
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, "提取变量").FontSize(12).Bold()
@@ -1547,6 +1681,9 @@ func (a *App) editorBranchChildren(c *ui.Context, t *ui.Theme, step *model.Step,
 		if ui.Button(c.Key("http"), "+ 请求").Clicked() {
 			*children = append(*children, model.Step{ID: newID(), Name: "请求", Type: model.StepRequest, Enabled: true, Method: "GET"})
 		}
+		if ui.Button(c.Key("tcp"), "+ TCP").Clicked() {
+			*children = append(*children, model.Step{ID: newID(), Name: "TCP", Type: model.StepTCP, Enabled: true, TCPPort: "8080", TCPSendMode: "line", TCPReadMode: "line", TCPTimeout: "5000"})
+		}
 		if ui.Button(c.Key("script"), "+ 脚本").Clicked() {
 			*children = append(*children, model.Step{ID: newID(), Name: "脚本", Type: model.StepScript, Enabled: true})
 		}
@@ -1575,6 +1712,12 @@ func (a *App) editorBranchChildren(c *ui.Context, t *ui.Theme, step *model.Step,
 					ui.Select(c, &child.Method, methods).Width(90)
 					ui.TextInput(c, &child.URL).Placeholder("{{baseUrl}}/path").Grow(1)
 				})
+			case model.StepTCP:
+				ui.Row(c).Gap(6).Children(func() {
+					ui.TextInput(c, &child.TCPHost).Placeholder("主机").Grow(2)
+					ui.TextInput(c, &child.TCPPort).Placeholder("端口").Grow(1)
+				})
+				ui.TextInput(c, &child.TCPSend).Placeholder("发送数据（支持 {{变量}}）")
 				ui.TextInput(c, &child.Body).Placeholder("Body（可选）")
 				a.editorExtract(c, t, child)
 			case model.StepScript:
@@ -1682,9 +1825,9 @@ func (a *App) editorParallel(c *ui.Context, t *ui.Theme, step *model.Step) {
 	}
 	ui.Text(c, "执行后自动登记：task.<任务名>.status(success/fail) / .output / .error / .duration，以及 task.success/failed/total/allSuccess，供扇入门控表达式引用。").FontSize(10).TextColor(t.TextMuted)
 	ui.Text(c, map[string]string{
-		"array": "array：各任务产物按顺序组成数组",
+		"array":  "array：各任务产物按顺序组成数组",
 		"object": "object：以任务名为 key 组成对象",
-		"table": "table：各任务产物（数组）展开合并成一张表，可直接导出",
+		"table":  "table：各任务产物（数组）展开合并成一张表，可直接导出",
 		"concat": "concat：各任务产物转为文本后拼接",
 	}[defaultModeStr(p.Mode)]).FontSize(10).TextColor(t.TextMuted)
 	if defaultModeStr(p.Mode) == "concat" {
@@ -1789,8 +1932,8 @@ func (a *App) editorLoop(c *ui.Context, t *ui.Theme, step *model.Step) {
 		ui.Select(c, &lp.Mode, modes).Width(110)
 	})
 	fieldHint(c, t, map[string]string{
-		"until": "翻页场景常用：每轮执行循环体，直到终止条件成立（如返回空数组）退出。",
-		"count": "固定执行 N 次，适合已知页数的场景。",
+		"until":   "翻页场景常用：每轮执行循环体，直到终止条件成立（如返回空数组）退出。",
+		"count":   "固定执行 N 次，适合已知页数的场景。",
 		"foreach": "遍历一个数组变量，逐个元素执行循环体。",
 	}[lp.Mode])
 
@@ -1893,19 +2036,19 @@ func (a *App) editorProcess(c *ui.Context, t *ui.Theme, step *model.Step) {
 		step.Op = op
 	}
 	hints := map[string]string{
-		"set": "设置变量：name=变量名, value=值",
-		"append": "循环内累积：from=源变量, to=数组变量（每轮追加一项）",
+		"set":           "设置变量：name=变量名, value=值",
+		"append":        "循环内累积：from=源变量, to=数组变量（每轮追加一项）",
 		"json_to_table": "JSON 数组转表格：from=源变量, to=目标变量",
-		"filter": "过滤：from, field, op(eq/ne/contains/gt...), value, to",
-		"sort": "排序：from, field, order(asc/desc), to",
-		"pick": "取字段：from, fields(逗号分隔), to",
-		"flatten": "合并数组：from(逗号分隔的多个变量), to",
-		"format_time": "时间格式化：from, in(unix/unixms), layout, to",
-		"join": "拼接：values(a,b,c), sep, to",
-		"base64encode": "Base64 编码：from=源变量, to=目标变量",
-		"base64decode": "Base64 解码：from=源变量, to=目标变量",
-		"urlencode": "URL 编码：from=源变量, to=目标变量",
-		"urldecode": "URL 解码：from=源变量, to=目标变量",
+		"filter":        "过滤：from, field, op(eq/ne/contains/gt...), value, to",
+		"sort":          "排序：from, field, order(asc/desc), to",
+		"pick":          "取字段：from, fields(逗号分隔), to",
+		"flatten":       "合并数组：from(逗号分隔的多个变量), to",
+		"format_time":   "时间格式化：from, in(unix/unixms), layout, to",
+		"join":          "拼接：values(a,b,c), sep, to",
+		"base64encode":  "Base64 编码：from=源变量, to=目标变量",
+		"base64decode":  "Base64 解码：from=源变量, to=目标变量",
+		"urlencode":     "URL 编码：from=源变量, to=目标变量",
+		"urldecode":     "URL 解码：from=源变量, to=目标变量",
 	}
 	fieldHint(c, t, "参数（每行 key=value，支持 {{变量}}）")
 	if h, ok := hints[op]; ok {
@@ -2185,6 +2328,13 @@ func (a *App) appendStep(typ model.StepType) {
 	switch typ {
 	case model.StepRequest:
 		s.Method = "GET"
+		s.Extract = []model.Extract{}
+		s.Assert = []model.Assert{}
+	case model.StepTCP:
+		s.TCPPort = "8080"
+		s.TCPSendMode = "line"
+		s.TCPReadMode = "line"
+		s.TCPTimeout = "5000"
 		s.Extract = []model.Extract{}
 		s.Assert = []model.Assert{}
 	case model.StepLoop:
@@ -2553,6 +2703,8 @@ func defaultStepName(t model.StepType) string {
 	switch t {
 	case model.StepRequest:
 		return "HTTP 请求"
+	case model.StepTCP:
+		return "TCP Socket"
 	case model.StepLoop:
 		return "循环/翻页"
 	case model.StepBranch:

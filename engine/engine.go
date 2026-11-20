@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -50,6 +51,64 @@ type Engine struct {
 
 	// trace 收集步骤/断言记录；并行子任务共享同一个 trace。
 	trace *TraceLog
+
+	// tcpPool 长连接池：按连接名共享 TCP socket，实现跨步骤长连接。
+	// 父引擎与并行子引擎共享同一个池；由根 Run 结束时统一关闭。
+	tcpPool *tcpConnPool
+}
+
+// tcpConnPool 线程安全的长连接池。
+type tcpConnPool struct {
+	mu    sync.Mutex
+	conns map[string]*tcpConnEntry
+}
+
+type tcpConnEntry struct {
+	conn    net.Conn
+	timeout time.Duration
+}
+
+func newTCPConnPool() *tcpConnPool {
+	return &tcpConnPool{conns: map[string]*tcpConnEntry{}}
+}
+
+// get 取连接；不存在返回 nil。
+func (p *tcpConnPool) get(key string) *tcpConnEntry {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.conns[key]
+}
+
+// put 存入连接；若同名连接已存在则先关闭旧连接。
+func (p *tcpConnPool) put(key string, entry *tcpConnEntry) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if old := p.conns[key]; old != nil && old.conn != entry.conn {
+		_ = old.conn.Close()
+	}
+	p.conns[key] = entry
+}
+
+// remove 关闭并移除连接。
+func (p *tcpConnPool) remove(key string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if entry := p.conns[key]; entry != nil {
+		_ = entry.conn.Close()
+		delete(p.conns, key)
+		return true
+	}
+	return false
+}
+
+// closeAll 关闭所有长连接。
+func (p *tcpConnPool) closeAll() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for key, entry := range p.conns {
+		_ = entry.conn.Close()
+		delete(p.conns, key)
+	}
 }
 
 func NewEngine(sc *model.Scenario, onEvent func(Event)) *Engine {
@@ -68,6 +127,7 @@ func NewEngine(sc *model.Scenario, onEvent func(Event)) *Engine {
 		onEvent:  onEvent,
 		emitMu:   &sync.Mutex{},
 		trace:    &TraceLog{},
+		tcpPool:  newTCPConnPool(),
 	}
 }
 
@@ -107,6 +167,11 @@ func (e *Engine) stopped() bool { return atomic.LoadInt32(&e.stopFlag) == 1 }
 
 // Run 按顺序执行整个场景。
 func (e *Engine) Run() *Result {
+	if e.tcpPool == nil {
+		e.tcpPool = newTCPConnPool()
+	}
+	// 场景结束（含失败/提前停止）统一关闭所有长连接，避免 socket 泄漏。
+	defer e.tcpPool.closeAll()
 	res := &Result{Scenario: e.scenario.Name, Started: time.Now()}
 	for _, step := range e.scenario.Steps {
 		if e.stopped() {
@@ -157,6 +222,8 @@ func (e *Engine) runStep(step model.Step, depth int) (retErr error) {
 	switch step.Type {
 	case model.StepRequest:
 		err = e.runRequest(step)
+	case model.StepTCP:
+		err = e.runTCPStep(step)
 	case model.StepLoop:
 		err = e.runLoop(step, depth)
 	case model.StepBranch:

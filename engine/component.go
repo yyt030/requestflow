@@ -129,6 +129,7 @@ func (e *Engine) runParallel(step model.Step, depth int) error {
 				onEvent:  e.onEvent,
 				emitMu:   e.emitMu, // 共享事件锁，保证回调串行
 				trace:    e.trace,  // 共享执行记录
+				tcpPool:  e.tcpPool, // 共享长连接池，由根 Run 统一关闭
 			}
 			for _, child := range task.Steps {
 				if e.stopped() {

@@ -1,6 +1,8 @@
-# RequestFlow · HTTP 流程自动化工具
+# RequestFlow · request流程自动化工具
 
-一个用 Go + [mygo](https://github.com/egoist/mygo) 原生 UI 构建的桌面工具：把「登录 → 按顺序发请求 → 提取数据 → 处理 → 导出」配置成可视化步骤，**一键执行**，类似接口自动化测试。单个二进制、无 cgo、原生界面秒开。
+一个用 Go + [mygo](https://github.com/egoist/mygo) 原生 UI 构建的桌面工具：把「登录 → 按顺序发请求（HTTP）或收发报文（TCP Socket）→ 提取数据 → 处理 → 导出」配置成可视化步骤，**一键执行**，类似接口自动化测试。单个二进制、无 cgo、原生界面秒开。
+
+既支持 **HTTP/HTTPS** 请求（form-data/JSON/认证等），也支持 **TCP Socket**（连接、发送、按行/定长/标记读取响应，可选 TLS），两者可在同一场景里串联、互相传递变量。
 
 ## 特性
 
@@ -8,7 +10,9 @@
 - **环境变量分层**：场景可定义多套环境（如 dev/test/prod），每套环境一组变量，顶栏/侧栏下拉一键切换；运行时按「环境变量 > 全局变量」优先级解析。数据驱动时行数据优先级最高。旧场景无 `environments` 时行为不变。
 - **请求级 Pre/Post 脚本（Postman 风格）**：request 步骤可配 `Pre-request Script`（请求发送前执行，改写变量以影响本次 URL/头/体）与 `Tests`（响应提取/断言后执行，`last` 访问响应），支持 JS / Python 双引擎，与独立 script 步骤共用语法。
 - **Postman 风格布局**：顶栏品牌 + 场景 + 操作分组；左侧 Collection 导航树（可搜索）；右侧主工作区用 **步骤编排 / 接口调试 / 运行结果** 三个标签切换；底部状态栏。执行结果采用 **日志 / 结果表 / 变量** 三视图。结果表用原生表格展示提取的数组数据（可选数据源、列排序、刷新）；变量视图列出全部运行时变量。
-- **可配置顺序步骤**：`request / branch / switch / loop / parallel / merge / process / script / assert / export` 十种步骤自由编排。
+- **可配置顺序步骤**：`request / tcp / branch / switch / loop / parallel / merge / process / script / assert / export` 十一种步骤自由编排。
+- **TCP Socket 步骤**：填写主机/端口即可建立 TCP 连接（可选 TLS），发送数据支持变量与 `\n`/`\xNN` 转义、四种发送模式（line 补换行 / raw 原样 / hex 十六进制 / **frame 长度头**）；读取支持五种模式（line 读一行 / all 读到关闭或超时 / fixed 定长 / until 读到结束标记 / **frame 长度头**）。响应以文本形式供 jsonpath/regex 提取与断言，可与 HTTP 步骤互相传递变量，实现「HTTP 登录取凭证 → TCP 协议校验」这类跨协议流程。
+- **TCP 长连接 + 长度头帧协议**：`tcpConnMode=short`（默认，每步独立连接、发完即关）或 `long`（按 `tcpConnKey` 连接名**跨步骤复用同一 socket**，服务端会话状态得以保持，场景结束自动关闭，也可用 `tcpClose=true` 步骤显式关闭）。`tcpFrameHead` 配置帧头位数（如 8），配合发送/读取模式的 `frame`：发送时自动加 N 位十进制长度头（左补零），如 8 字节报文 `88888888` → `0000000888888888`；读取时先解析长度头再读定长报文。典型用法：步骤1 `LOGIN`、步骤2 `QUERY` 共用同一长连接名，用帧协议收发。
 - **条件分支（可视化配置）**：`branch` 步骤按条件走不同分支——**变量 + 操作符（大于/小于/等于/包含/为空…）+ 值** 下拉拼装，支持 and/or 组合与嵌套；条件成立执行 then、否则执行 else，各分支内可放请求/脚本/处理子步骤。也可切换高级模式直接写 `{{amount}} > 0` 表达式。
 - **多分支 switch**：`switch` 步骤配置多个 case，**自上而下匹配第一个满足的 case** 后执行其步骤并跳出，都不满足则走 default。case 条件与 branch 一致（and/or + 中文操作符 / 高级表达式），支持用 ↑/↓ 调整优先级。适合按状态码、等级、类型分发到不同处理流程。
 - **扇出（并发）**：`parallel` 步骤把多个子任务**并发执行**（各自独立变量沙箱、共享会话，类似 Go 的 goroutine 扇出），全部完成后按 `array / object / table / concat` 方式把各任务产物汇合到一个变量。同时自动登记每个任务的状态表（见下）。任一任务失败默认忽略并继续，可勾选「失败即整体失败」。
@@ -54,18 +58,18 @@ go build -o requestflow .
 
 > **Linux 上运行 GUI 卡死/白屏？** RequestFlow 的界面基于 WebKitGTK，其 GPU（DMA-BUF）渲染在部分 NVIDIA 驱动、虚拟机、远程桌面上会把桌面合成器拖死，表现为"运行后完全没反应、连鼠标都卡住"。程序已默认强制走 CPU 软件渲染规避；若仍异常，可：① 用 `-software` 启动；② 终端执行前加 `GDK_BACKEND=x11 LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./requestflow`；③ 无图形需求直接用 `-run` 无界面模式。若无 display（如 SSH/容器），程序会明确提示并退出，而非卡住。
 
-## 打包（Windows 分发）
+## 打包（Windows / Linux 分发）
 
-默认只打 **Windows / amd64**，一条命令生成可直接分发的 **tar.gz**（含带应用图标的 exe、README、示例场景、使用说明与 SHA256 校验文件）：
+默认一次打出 **windows/amd64** 与 **linux/amd64** 两个包，各生成可直接分发的 **tar.gz**（含带应用图标的 Windows exe、README、示例场景、使用说明与 SHA256 校验文件）。每次打包会清理 `dist/` 下旧版本产物，只保留本次结果：
 
 ```bash
-./pack.sh                       # 默认 windows/amd64 → dist/requestflow-<版本>-windows-amd64.tar.gz
-./pack.sh linux/amd64           # 需要其他平台时显式指定 <goos>/<goarch>
-FORMAT=zip ./pack.sh            # 改用 zip 格式
-VERSION=v2.0.0 ./pack.sh        # CI 中手动指定版本号
+./pack.sh                                  # 默认 windows/amd64 + linux/amd64 两个包
+./pack.sh linux/arm64                      # 只打指定平台（可传多个：<goos>/<goarch> ...）
+FORMAT=zip ./pack.sh                       # 改用 zip 格式
+VERSION=v2.0.0 ./pack.sh                   # CI 中手动指定版本号
 ```
 
-产物在 `dist/`，解压后双击 `requestflow.exe` 即可用 GUI；命令行支持 `-run` / `-version`。版本号由 git tag + commit 自动注入，无需 cgo。
+产物在 `dist/`（如 `requestflow-<版本>-windows-amd64.tar.gz`、`requestflow-<版本>-linux-amd64.tar.gz`）；Windows 解压后双击 `requestflow.exe`，Linux 在图形桌面执行 `./requestflow`（GUI 依赖见包内使用说明）。命令行支持 `-run` / `-version`。版本号由 git tag + commit 自动注入，无需 cgo。
 
 **应用图标**：Windows exe 内嵌品牌图标（`assets/icon.png`，蓝青渐变 + 双节点汇聚成箭头的流程意象，对应扇出/扇入）。打包时若检测到 `go-winres` 会自动生成 `rsrc_windows_amd64.syso` 并链接进 exe；未安装则降级为无图标构建，不影响功能。安装方式：`go install github.com/tc-hib/go-winres@latest`。可用 `go-winres extract requestflow.exe` 查看内嵌图标资源。
 
@@ -269,6 +273,7 @@ requestflow -run scene.json -data users.csv -report result.html
 | type | 作用 | 关键字段 |
 |---|---|---|
 | `request` | 发 HTTP 请求 | `method` `url` `headers` `query` `body` `authType` `authToken` `extract` `assert` |
+| `tcp` | 建立 TCP Socket 连接、收发报文 | `tcpHost` `tcpPort` `tcpSend` `tcpSendMode` `tcpReadMode` `tcpReadNum` `tcpUntil` `tcpTimeout` `tcpKeepAlive` `tcpTls` `tcpConnMode` `tcpConnKey` `tcpClose` `tcpFrameType` `tcpFrameHead` `tcpFrameEndian` `extract` `assert` |
 | `branch` | 条件分支 | `branch`（`conditions`+`logic` 或 `when`；`then`/`else` 子步骤） |
 | `switch` | 多分支 | `switch.cases[]`（每个 case 有 `name` `conditions`+`logic` 或 `when` + `steps`）、`switch.default[]` |
 | `loop` | 循环子步骤（翻页） | `loop`（见下表）+ `children` |
@@ -290,6 +295,62 @@ requestflow -run scene.json -data users.csv -report result.html
 | `until` | 直到条件成立退出 | `breakWhen`，如 `{{len(rows)}} == 0` |
 
 `pageVar` / `pageStart` / `pageStep` 让页码变量每轮自动递增，`max` 防止死循环（默认 100）。
+
+### TCP Socket 步骤（tcp）
+
+| 字段 | 说明 |
+|---|---|
+| `tcpHost` / `tcpPort` | 目标主机与端口，支持 `{{变量}}` |
+| `tcpSend` | 发送数据，支持 `{{变量}}` 与转义 `\n` `\r\n` `\t` `\xNN` |
+| `tcpSendMode` | `line`（末尾补 `\n`，默认）/ `raw`（原样）/ `hex`（按十六进制解码）/ `frame`（按所选帧头类型自动加长度头） |
+| `tcpReadMode` | `line`（读一行）/ `all`（读到关闭或超时）/ `fixed`（定长字节）/ `until`（读到结束标记）/ `frame`（按所选帧头类型读长度头 + 定长报文） |
+| `tcpReadNum` | `fixed` 模式的字节数（默认 1024） |
+| `tcpUntil` | `until` 模式的结束标记，如 `\n` 或 `>` |
+| `tcpTimeout` | 连接与读取超时毫秒，默认 5000 |
+| `tcpKeepAlive` | 底层 TCP 保活探测周期（秒）；`0`/空=关闭（默认），如 `30` 表示每 30 秒探测一次 |
+| `tcpTls` | 是否启用 TLS（默认 false） |
+| `tcpConnMode` | `short`（默认，短连接，每步独立建立、发完即关）/ `long`（长连接，按 `tcpConnKey` 跨步骤复用同一 socket） |
+| `tcpConnKey` | 长连接共享键，同名步骤复用同一 socket；留空为 `_default` |
+| `tcpClose` | `true` 时关闭 `tcpConnKey` 指定的长连接（不再发数据） |
+| `tcpFrameType` | 帧头类型：`ascii`（位数自定义的十进制字符串头）/ `bin1`（1 字节二进制，≤255）/ `bin2`（2 字节二进制，≤64K-1）/ 空（不启用）。仅 `frame` 模式使用，界面可下拉选择 |
+| `tcpFrameHead` | `ascii` 头的位数，如 `3` / `5` / `8`；留空按 8 处理，`bin1`/`bin2` 忽略此字段。旧场景仅填此项时自动按 `ascii` 兼容 |
+| `tcpFrameEndian` | `bin2` 头的字节序：`big`（默认，网络序）/ `little` |
+
+**三种长度头帧协议**（界面「帧头类型」下拉可选，`tcpSendMode=frame` / `tcpReadMode=frame` 时生效）：
+
+- **位数自定义的 ASCII 字符串头**：`tcpFrameType=ascii`（或旧写法只填 `tcpFrameHead=8`）。长度写成十进制数字字面，位数由 `tcpFrameHead` 决定（如 3/5/8，默认 8），不足左侧补零。例如 8 位头 + 8 字节报文 → `0000000888888888`；3 位头 + 4 字节报文 → `004PING`。读取时先读 N 位头解析长度，再读定长报文。
+- **1 字节二进制头**：`tcpFrameType=bin1`。长度以 1 个无符号字节写出，最大 255 字节报文，超出会明确报错。例如长度 10 → 字节 `0a`。
+- **2 字节二进制头**：`tcpFrameType=bin2`。长度以 2 字节二进制写出，最大 65535 字节（64K-1），超出会明确报错。默认大端（网络序 `big`），可设 `tcpFrameEndian=little` 切小端。例如长度 8 → 大端 `00 08`、小端 `08 00`。
+
+**保活（keepalive）**：`tcpKeepAlive` 填大于 0 的秒数时，底层 socket 开启 TCP keepalive 并按该周期探测；`0`/空时显式关闭（覆盖 Go 默认开启的行为）。对 TLS 连接作用于其底层 TCP socket。长连接空闲保活、短连接均可用。
+
+JSON 示例（长连接 + 2 字节二进制帧头，两步复用同一 socket）：
+
+```json
+{
+  "name": "二进制帧长连接示例",
+  "steps": [
+    {
+      "id": "login", "name": "登录帧", "type": "tcp", "enabled": true,
+      "tcpHost": "127.0.0.1", "tcpPort": "9000",
+      "tcpConnMode": "long", "tcpConnKey": "session1",
+      "tcpSend": "LOGIN zhangsan", "tcpSendMode": "frame", "tcpReadMode": "frame",
+      "tcpFrameType": "bin2", "tcpFrameEndian": "big", "tcpTimeout": "3000"
+    },
+    {
+      "id": "query", "name": "查询帧", "type": "tcp", "enabled": true,
+      "tcpHost": "127.0.0.1", "tcpPort": "9000",
+      "tcpConnMode": "long", "tcpConnKey": "session1",
+      "tcpSend": "QUERY.profile", "tcpSendMode": "frame", "tcpReadMode": "frame",
+      "tcpFrameType": "bin2", "tcpFrameEndian": "big", "tcpTimeout": "3000"
+    }
+  ]
+}
+```
+
+**长连接跨步骤**：多个 TCP 步骤设 `tcpConnMode=long` 且 `tcpConnKey` 相同，即可在同一 socket 上依次收发，服务端会话状态（如登录态）得以保持；场景结束自动关闭所有长连接，也可加一个 `tcpClose=true` 的步骤显式关闭。长短连接在界面「连接模式」下拉选择。
+
+响应以文本写入 `body`，`status=200` 表示连接并读取成功；因此 `extract`/`assert` 的 `body`、`jsonpath`、`regex`、`status` 用法与 HTTP 完全一致。典型跨协议场景：HTTP 登录提取 `session`/`tag` → TCP 步骤发送 `CHECK {{session}} {{tag}}` → 从 TCP 响应提取变量并断言。
 
 ### 提取器（extract）
 
@@ -383,6 +444,6 @@ report/            测试报告：步骤/断言汇总 → HTML/JSON 导出 + 单
 ui/app.go          mygo 原生界面（步骤选中/双击调试/日志落盘/数据驱动/报告导出）
 version/version.go 版本信息（构建期注入）+ 单元测试
 build.sh           自动注入版本号的构建脚本
-pack.sh            打包脚本（默认 windows/amd64，tar.gz + 图标 + sha256）
+pack.sh            打包脚本（默认 windows/amd64 + linux/amd64 双平台，tar.gz + 图标 + sha256，自动清理旧产物）
 scenarios/         示例场景
 ```

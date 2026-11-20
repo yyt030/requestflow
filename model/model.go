@@ -47,6 +47,7 @@ type StepType string
 
 const (
 	StepRequest  StepType = "request"  // 发送 HTTP 请求，可提取变量、断言
+	StepTCP      StepType = "tcp"      // TCP Socket：连接→发送→读取响应，可提取变量、断言
 	StepLoop     StepType = "loop"     // 循环执行子步骤，用于翻页/遍历
 	StepBranch   StepType = "branch"   // 条件分支：when 成立执行 then，否则执行 else
 	StepSwitch   StepType = "switch"   // 多分支：自上而下匹配第一个 case，否则 default
@@ -79,7 +80,7 @@ type Step struct {
 	GraphQLVariables string      `json:"graphqlVariables,omitempty"`
 
 	// Auth: bearer token 从变量读取（如 {{token}}）；cookie 由全局 CookieJar 自动管理
-	AuthType  string `json:"authType,omitempty"` // none | bearer | basic | apikey | oauth2
+	AuthType  string `json:"authType,omitempty"`  // none | bearer | basic | apikey | oauth2
 	AuthToken string `json:"authToken,omitempty"` // bearer: "{{token}}"
 	AuthUser  string `json:"authUser,omitempty"`
 	AuthPass  string `json:"authPass,omitempty"`
@@ -88,14 +89,43 @@ type Step struct {
 	AuthKeyValue string `json:"authKeyValue,omitempty"` // 参数值（支持 {{变量}}）
 	AuthKeyIn    string `json:"authKeyIn,omitempty"`    // header（默认）| query
 	// oauth2 认证（client_credentials / password）
-	AuthTokenURL   string `json:"authTokenUrl,omitempty"`
-	AuthClientID   string `json:"authClientId,omitempty"`
+	AuthTokenURL     string `json:"authTokenUrl,omitempty"`
+	AuthClientID     string `json:"authClientId,omitempty"`
 	AuthClientSecret string `json:"authClientSecret,omitempty"`
-	AuthScope      string `json:"authScope,omitempty"`
-	AuthGrantType  string `json:"authGrantType,omitempty"` // client_credentials（默认）| password
+	AuthScope        string `json:"authScope,omitempty"`
+	AuthGrantType    string `json:"authGrantType,omitempty"` // client_credentials（默认）| password
 
 	Extract []Extract `json:"extract,omitempty"`
 	Assert  []Assert  `json:"assert,omitempty"`
+
+	// --- tcp 字段 ---
+	TCPHost     string `json:"tcpHost,omitempty"`     // 目标主机，如 127.0.0.1 或 {{host}}
+	TCPPort     string `json:"tcpPort,omitempty"`     // 端口，如 8080 或 {{port}}
+	TCPSend     string `json:"tcpSend,omitempty"`     // 发送的数据（文本），支持 {{变量}}；可用 \n \r\n \xNN 转义
+	TCPSendMode string `json:"tcpSendMode,omitempty"` // line（追加换行，默认）| raw（原样发送）| hex（按十六进制解码）
+	TCPReadMode string `json:"tcpReadMode,omitempty"` // line（读一行）| all（读到关闭/超时）| fixed（固定字节）| until（读到标记）
+	TCPReadNum  string `json:"tcpReadNum,omitempty"`  // fixed 模式的字节数 / until 模式的最大字节数，支持 {{变量}}
+	TCPUntil    string `json:"tcpUntil,omitempty"`    // until 模式的结束标记，如 \n 或 >
+	TCPTimeout  string `json:"tcpTimeout,omitempty"`  // 超时毫秒，默认 5000，支持 {{变量}}
+	TCPTLS      bool   `json:"tcpTls,omitempty"`      // 是否使用 TLS（tcp over TLS）
+
+	// 连接复用与帧协议
+	TCPConnMode string `json:"tcpConnMode,omitempty"` // short（默认，每步独立连接）| long（按连接名跨步骤复用）
+	TCPConnKey  string `json:"tcpConnKey,omitempty"`  // 长连接共享键，同名步骤复用同一 socket；空为 "_default"
+	TCPClose    bool   `json:"tcpClose,omitempty"`    // 关闭 TCPConnKey 指定的长连接（不再发送数据）
+
+	// 保活：TCPKeepAlive 为 TCP 保活探测周期（秒）；0/空=关闭（默认）。
+	// 底层使用 net.TCPConn.SetKeepAlive + SetKeepAlivePeriod；TLS 连接作用于其底层 TCP socket。
+	TCPKeepAlive string `json:"tcpKeepAlive,omitempty"`
+
+	// 帧头类型（send/read 的 frame 模式使用）：
+	//   - ascii：N 位十进制字符串长度头，位数自定义（如 3/5/8），不足左补零，如 8 字节报文→"00000008"（兼容旧场景）
+	//   - bin1 ：1 字节二进制长度头，最大 255 字节报文
+	//   - bin2 ：2 字节二进制长度头，最大 65535（64K-1）字节；字节序由 TCPFrameEndian 决定
+	// 空值时按 TCPFrameHead>0 推断为 ascii，保证旧场景无需改动。
+	TCPFrameType   string `json:"tcpFrameType,omitempty"`   // ascii | bin1 | bin2 | 空（不启用）
+	TCPFrameHead   string `json:"tcpFrameHead,omitempty"`   // ascii 帧头位数，如 3/5/8；空按 8 处理；bin1/bin2 忽略
+	TCPFrameEndian string `json:"tcpFrameEndian,omitempty"` // bin2 字节序：big（默认，网络序）| little
 
 	// --- loop 字段 ---
 	Loop *Loop `json:"loop,omitempty"`
@@ -132,8 +162,8 @@ type Step struct {
 	Path   string `json:"path,omitempty"`
 
 	// --- 通用 ---
-	Children []Step `json:"children,omitempty"` // loop 的子步骤
-	ContinueOnFail bool `json:"continueOnFail,omitempty"`
+	Children       []Step `json:"children,omitempty"` // loop 的子步骤
+	ContinueOnFail bool   `json:"continueOnFail,omitempty"`
 }
 
 // FormField form-data / x-www-form-urlencoded 的单个字段。
@@ -183,8 +213,8 @@ type Loop struct {
 // Condition 单个条件：对变量值做比较（可视化配置用）。
 // 求值时先取 Var 变量的值，再按 Op 与 Value 比较。
 type Condition struct {
-	Var   string `json:"var"`            // 变量名，如 amount（也支持点路径）
-	Op    string `json:"op"`             // gt|gte|lt|lte|eq|ne|contains|exists|empty|true
+	Var   string `json:"var"`             // 变量名，如 amount（也支持点路径）
+	Op    string `json:"op"`              // gt|gte|lt|lte|eq|ne|contains|exists|empty|true
 	Value string `json:"value,omitempty"` // 比较值；exists/empty/true 时忽略
 }
 
@@ -230,11 +260,11 @@ type ParallelTask struct {
 //   - concat: 各任务产物转为字符串后拼接（可用 Separator 分隔）
 type Parallel struct {
 	Tasks     []ParallelTask `json:"tasks,omitempty"`
-	Var       string         `json:"var,omitempty"`          // 汇合结果写入的变量名
-	Mode      string         `json:"mode,omitempty"`         // array | object | table | concat
-	Separator string         `json:"separator,omitempty"`    // concat 模式的拼接分隔符
-	FailFast  bool           `json:"failFast,omitempty"`     // 子任务失败时是否立即失败（默认忽略并继续）
-	StatusVar string         `json:"statusVar,omitempty"`    // 任务状态登记表写入的变量名，默认 task
+	Var       string         `json:"var,omitempty"`       // 汇合结果写入的变量名
+	Mode      string         `json:"mode,omitempty"`      // array | object | table | concat
+	Separator string         `json:"separator,omitempty"` // concat 模式的拼接分隔符
+	FailFast  bool           `json:"failFast,omitempty"`  // 子任务失败时是否立即失败（默认忽略并继续）
+	StatusVar string         `json:"statusVar,omitempty"` // 任务状态登记表写入的变量名，默认 task
 }
 
 // Merge 扇入门控配置：等待上游 parallel 的所有任务完成后，用高级表达式检查各任务状态/产物。
@@ -251,8 +281,8 @@ type Response struct {
 	Headers    map[string][]string
 	Cookies    []*HTTPCookie
 	Body       []byte
-	JSON        interface{} // 解析后的 JSON（若 body 是 JSON）
-	Text        string
+	JSON       interface{} // 解析后的 JSON（若 body 是 JSON）
+	Text       string
 }
 
 // HTTPCookie 简化 cookie，避免 model 依赖 net/http。
