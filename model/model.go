@@ -8,6 +8,29 @@ type Scenario struct {
 	BaseURL   string            `json:"baseUrl,omitempty"`
 	Variables map[string]string `json:"variables,omitempty"`
 	Steps     []Step            `json:"steps"`
+
+	// 环境变量分层：Environments 是「环境名 → 变量集」的映射，ActiveEnv 指定当前启用
+	// 的环境。运行时变量优先级：环境变量 > 场景全局变量（同名时环境变量覆盖）。
+	// 旧场景没有这两个字段时按空处理，行为与之前完全一致。
+	Environments map[string]map[string]string `json:"environments,omitempty"`
+	ActiveEnv    string                       `json:"activeEnv,omitempty"`
+}
+
+// EnvNames 返回按名称排序的环境列表，便于 UI 稳定展示。
+func (s *Scenario) EnvNames() []string {
+	names := make([]string, 0, len(s.Environments))
+	for k := range s.Environments {
+		names = append(names, k)
+	}
+	return names
+}
+
+// EnvVars 返回指定环境的变量集（只读语义，返回副本前的原始 map 由调用方修改场景）。
+func (s *Scenario) EnvVars(name string) map[string]string {
+	if s.Environments == nil {
+		return nil
+	}
+	return s.Environments[name]
 }
 
 // NewScenario 返回一个带默认值的空场景。
@@ -96,6 +119,12 @@ type Step struct {
 	// --- script 字段 ---
 	ScriptLang string `json:"scriptLang,omitempty"` // js（默认）| python；空值按 js 处理，兼容旧场景
 	Code       string `json:"code,omitempty"`
+
+	// 请求级脚本（Postman 风格的 Pre-request Script / Tests）：仅在 request 步骤使用。
+	// PreScript 在请求发送前执行（可改写变量影响本次请求）；PostScript 在收到响应、
+	// 提取与断言之后执行（可用 last 访问响应、vars 读写变量）。语言同 ScriptLang。
+	PreScript  string `json:"preScript,omitempty"`
+	PostScript string `json:"postScript,omitempty"`
 
 	// --- export 字段 ---
 	From   string `json:"from,omitempty"`   // 变量名，引用表格数据

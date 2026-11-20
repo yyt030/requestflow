@@ -143,16 +143,24 @@ func RunDataset(sc *model.Scenario, rows []DataRow, onEvent func(IterationEvent)
 	results := make([]DatasetResult, 0, len(rows))
 	for i, row := range rows {
 		iter := i + 1
-		// 合并场景全局变量与本行数据（行数据优先）
+		// 变量优先级：场景全局变量 < 当前环境变量 < 本行数据（行数据最高优先）。
+		// 先把环境变量合并进 vars，再用行数据覆盖，最后清空 ActiveEnv 避免
+		// NewEngine 内部再次用环境变量覆盖掉行数据。
 		vars := make(map[string]string, len(sc.Variables)+len(row))
 		for k, v := range sc.Variables {
 			vars[k] = v
+		}
+		if env := sc.EnvVars(sc.ActiveEnv); env != nil {
+			for k, v := range env {
+				vars[k] = v
+			}
 		}
 		for k, v := range row {
 			vars[k] = v
 		}
 		iterScenario := *sc
 		iterScenario.Variables = vars
+		iterScenario.ActiveEnv = "" // 环境变量已合并，避免 NewEngine 二次覆盖行数据
 
 		var wrapped func(Event)
 		if onEvent != nil {

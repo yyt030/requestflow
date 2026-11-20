@@ -58,14 +58,31 @@ func NewEngine(sc *model.Scenario, onEvent func(Event)) *Engine {
 	if sc == nil {
 		sc = &model.Scenario{Name: "空场景"}
 	}
+	// 变量合并：场景全局变量打底，当前激活环境的同名变量覆盖（环境变量分层）。
+	// 不修改场景原始数据，只构造本次运行用的初始变量集。
+	merged := mergeEnvVariables(sc)
 	return &Engine{
 		scenario: sc,
-		ctx:      NewContext(sc.Variables),
+		ctx:      NewContext(merged),
 		http:     NewHTTPClient(timeout, true),
 		onEvent:  onEvent,
 		emitMu:   &sync.Mutex{},
 		trace:    &TraceLog{},
 	}
+}
+
+// mergeEnvVariables 合并全局变量与当前激活环境的变量，环境变量优先。
+func mergeEnvVariables(sc *model.Scenario) map[string]string {
+	out := make(map[string]string, len(sc.Variables))
+	for k, v := range sc.Variables {
+		out[k] = v
+	}
+	if env := sc.EnvVars(sc.ActiveEnv); env != nil {
+		for k, v := range env {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 func (e *Engine) emit(typ, stepID, stepName, msg string) {
@@ -186,7 +203,31 @@ func (e *Engine) runStep(step model.Step, depth int) (retErr error) {
 	return nil
 }
 
+// runStepScript 按脚本语言执行一段请求级脚本（Pre-request / Tests）。
+// 语言取自 step.ScriptLang，空值按 js 处理，与独立 script 步骤保持一致。
+func (e *Engine) runStepScript(code string, step model.Step, last *model.Response, phase string) error {
+	if strings.TrimSpace(code) == "" {
+		return nil
+	}
+	wrap := step
+	wrap.Code = code
+	var err error
+	if strings.EqualFold(step.ScriptLang, "python") || strings.EqualFold(step.ScriptLang, "py") {
+		err = runPythonScript(e.ctx, wrap, last)
+	} else {
+		err = runScript(e.ctx, wrap, last)
+	}
+	if err != nil {
+		return fmt.Errorf("%s 脚本失败: %w", phase, err)
+	}
+	return nil
+}
+
 func (e *Engine) runRequest(step model.Step) error {
+	// Pre-request Script：在渲染请求参数之前执行，脚本对变量的改写能影响本次请求。
+	if err := e.runStepScript(step.PreScript, step, e.lastResp, "Pre-request"); err != nil {
+		return err
+	}
 	method := e.ctx.Render(step.Method)
 	rawURL := e.ctx.Render(step.URL)
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
@@ -242,6 +283,10 @@ func (e *Engine) runRequest(step model.Step) error {
 		return detErr
 	}
 	e.ctx.SetStepResponse(step.Name, responseView(resp))
+	// Tests（PostScript）：在响应提取与断言之后执行，last 指向本次响应。
+	if err := e.runStepScript(step.PostScript, step, resp, "Tests"); err != nil {
+		return err
+	}
 	return nil
 }
 

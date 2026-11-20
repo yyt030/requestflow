@@ -4,7 +4,9 @@
 
 ## 特性
 
-- **可视化配置**：左侧 **Postman 风格 Collections 树**（搜索过滤、类型色圆点兼启停开关、上下排序、删除）；**环境变量可视化编辑（增/改/删）**；右侧标签工作区按步骤类型显示表单。
+- **可视化配置**：左侧 **Postman 风格 Collections 树**（搜索过滤、类型色圆点兼启停开关、上下排序、删除）；**环境变量分层编辑（全局变量 + 多套环境切换，环境变量覆盖同名全局变量）**；右侧标签工作区按步骤类型显示表单。
+- **环境变量分层**：场景可定义多套环境（如 dev/test/prod），每套环境一组变量，顶栏/侧栏下拉一键切换；运行时按「环境变量 > 全局变量」优先级解析。数据驱动时行数据优先级最高。旧场景无 `environments` 时行为不变。
+- **请求级 Pre/Post 脚本（Postman 风格）**：request 步骤可配 `Pre-request Script`（请求发送前执行，改写变量以影响本次 URL/头/体）与 `Tests`（响应提取/断言后执行，`last` 访问响应），支持 JS / Python 双引擎，与独立 script 步骤共用语法。
 - **Postman 风格布局**：顶栏品牌 + 场景 + 操作分组；左侧 Collection 导航树（可搜索）；右侧主工作区用 **步骤编排 / 接口调试 / 运行结果** 三个标签切换；底部状态栏。执行结果采用 **日志 / 结果表 / 变量** 三视图。结果表用原生表格展示提取的数组数据（可选数据源、列排序、刷新）；变量视图列出全部运行时变量。
 - **可配置顺序步骤**：`request / branch / switch / loop / parallel / merge / process / script / assert / export` 十种步骤自由编排。
 - **条件分支（可视化配置）**：`branch` 步骤按条件走不同分支——**变量 + 操作符（大于/小于/等于/包含/为空…）+ 值** 下拉拼装，支持 and/or 组合与嵌套；条件成立执行 then、否则执行 else，各分支内可放请求/脚本/处理子步骤。也可切换高级模式直接写 `{{amount}} > 0` 表达式。
@@ -20,6 +22,9 @@
 - **测试报告导出**：汇总每步通过/失败、断言明细、耗时与迭代数据，导出 HTML / JSON 报告；GUI「⤓ 报告」按钮，CLI 用 `-report`。
 - **多格式导出**：xlsx / csv / txt / json。
 - **从 Chrome 一键导入 cURL**：DevTools 中右键请求 → Copy as cURL，粘贴后一键解析成请求步骤，自动识别 Bearer Token、Cookie、查询参数与请求体，支持 bash / cmd / PowerShell 三种格式。
+- **导入 Postman / OpenAPI**：导入面板支持整个 API 定义文件——**Postman Collection v2.1**（文件夹递归展开为步骤，保留变量/认证/Body）与 **OpenAPI 3.x / Swagger 2.0**（paths 转请求步骤，server 变量与路径/查询参数转 `{{变量}}`）。自动识别格式，一次导入多步骤场景。
+- **代码生成（Code Snippet）**：接口调试面板响应区「代码」标签，把当前请求（已解析 `{{变量}}`）反向生成 **Python requests / Go net/http / JavaScript fetch / cURL** 四种代码片段，一键复制，便于迁移到脚本或其他工具。
+- **请求历史 History**：每次调试请求自动追加记录到 exe 同目录 `requestflow-history.jsonl`（时间/方法/URL/状态/耗时 + 请求快照）；顶栏「🕘 历史」打开列表，可刷新、清空、载入任一条回调试面板重发。
 - **接口调试**：主工作区「接口调试」标签（或双击 HTTP 请求步骤）打开，采用 Postman 经典布局：请求行（方法色标 + 方法 + URL + 醒目「发送」按钮）+ 配置子标签 **Params / Headers / Body / Authorization**；单独发送请求即时查看响应，无需运行整个场景。响应区分 **Body / Headers / Cookies / cURL** 四视图并带状态码/耗时/字节数概览，JSON 自动美化。request 步骤编辑器里还有「⚡ 试发送此请求」按钮，用当前步骤配置（含 `{{变量}}` 渲染）直接调试；调试响应可一键反向生成 cURL 并导回场景。
 - **类似自动化测试**：每步可配断言（状态码 / JSONPath / 文本包含 / 变量比较），失败即中止，也可设「失败后继续」。
 - **无界面模式**：`requestflow -run scenario.json` 便于 CI / 命令行跑批。
@@ -214,12 +219,20 @@ requestflow -run scene.json -data users.csv -report result.html
 ```jsonc
 {
   "name": "场景名",
-  "baseUrl": "https://api.example.com",
+  "baseUrl": "{{baseUrl}}",
   "variables": { "pageSize": "20" },
+  "environments": {
+    "test": { "baseUrl": "https://test-api.example.com" },
+    "prod": { "baseUrl": "https://api.example.com" }
+  },
+  "activeEnv": "prod",
   "steps": [
     {
       "id": "login", "name": "登录", "type": "request", "enabled": true,
       "method": "POST", "url": "/api/login",
+      "scriptLang": "js",
+      "preScript": "vars.ts = Date.now();",
+      "postScript": "vars.loginOk = last.status == 200;",
       "headers": { "Content-Type": "application/json" },
       "body": "{\"user\":\"{{username}}\",\"pwd\":\"{{password}}\"}",
       "extract": [

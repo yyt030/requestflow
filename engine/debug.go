@@ -63,6 +63,7 @@ type DebugResult struct {
 	Formatted  string // JSON 美化后的响应体（非 JSON 则原文）
 	IsJSON     bool
 	Curl       string
+	Snippets   map[string]string // 代码生成：python / go / javascript / curl
 }
 
 // Debug 执行一次调试请求。vars 用于 {{变量}} 渲染，通常传场景全局变量（含 baseUrl）。
@@ -113,6 +114,11 @@ func Debug(req DebugRequest, vars map[string]string) *DebugResult {
 		Method:     method,
 		URL:        mergeQuery(rawURL, query),
 		DurationMS: elapsed.Milliseconds(),
+	}
+	// 代码生成基于已渲染的请求配置，与请求是否成功无关。
+	res.Snippets = map[string]string{}
+	for _, lang := range SnippetLangs {
+		res.Snippets[lang] = BuildSnippet(lang, method, rawURL, headers, query, body, step)
 	}
 	if err != nil {
 		res.Err = err.Error()

@@ -10,6 +10,8 @@
 *.syso
 
 # 运行生成的结果文件
+*.log
+requestflow-history.jsonl
 result.txt
 result.xlsx
 *.xlsx

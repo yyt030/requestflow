@@ -13,9 +13,12 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 
 	"requestflow/engine"
+	"requestflow/history"
+	"requestflow/importer"
 	"requestflow/logger"
 	"requestflow/model"
 	"requestflow/report"
@@ -206,6 +209,21 @@ type App struct {
 	bodyHeight    float32
 	importHeight  float32
 	gqlVarsHeight float32
+
+	// 环境变量分层：当前选中的环境名 + 新增环境变量缓冲
+	activeEnvBuf  string
+	newEnvName    string
+
+	// 代码生成 Code Snippet：语言选择 + 生成结果缓存
+	snippetLang string
+	snippetText string
+
+	// 请求历史：显示开关 + 缓存列表
+	showHistory  bool
+	historyList  []history.Entry
+	historyMsg   string
+	preScriptHeight  float32
+	postScriptHeight float32
 }
 
 // Run 启动 GUI。
@@ -225,9 +243,12 @@ func Run() {
 		headersHeight: 56,
 		queryHeight:   56,
 		bodyHeight:    72,
-	importHeight:  200,
-	gqlVarsHeight: 90,
-	showSteps:     true,
+		importHeight:  200,
+		gqlVarsHeight: 90,
+		preScriptHeight:  72,
+		postScriptHeight: 72,
+		snippetLang:       "python",
+		showSteps:     true,
 		showVars:      true,
 	}
 	app.logs = append(app.logs, "就绪。打开或新建场景，配置步骤后点击【一键运行】。")
@@ -315,8 +336,12 @@ func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
 		ui.Divider(c).Height(20)
 		if ui.Button(c, "⇥ 导入 cURL").Clicked() {
 			a.showImport = true
+			a.showHistory = false
 			a.importMsg = ""
 			a.mainTab = 0
+		}
+		if ui.Button(c, "🕘 历史").Tooltip("查看请求历史").Clicked() {
+			a.openHistory()
 		}
 		ui.Divider(c).Height(20)
 		if ui.Button(c, "⊞ 数据驱动").Tooltip("用 CSV/JSON 数据逐行运行场景").Clicked() {
@@ -393,18 +418,122 @@ func (a *App) fileTree(c *ui.Context, t *ui.Theme) {
 
 	ui.Box(c).Height(8)
 
-	// 根文件夹：环境变量 —— 子节点是各个变量。
+	// 根文件夹：环境变量 —— 子节点是环境选择器 + 全局变量 + 当前环境变量。
+	varCount := len(a.scenario.Variables)
+	if env := a.scenario.EnvVars(a.scenario.ActiveEnv); env != nil {
+		varCount += len(env)
+	}
 	a.treeFolderRow(c, t, "folder-vars", &a.showVars, iconFolder, t.TextMuted, func() {
-		ui.Text(c, "环境变量").FontSize(12).Bold()
-		ui.Text(c, fmt.Sprintf("(%d)", len(a.scenario.Variables))).FontSize(10).TextColor(t.TextMuted)
-	}, func() {
-		if iconButton(c, t, "addvar", iconPlus, "新增变量", 20, t.Text).Clicked() {
-			a.showVars = true
+		ui.Text(c, "变量").FontSize(12).Bold()
+		ui.Text(c, fmt.Sprintf("(%d)", varCount)).FontSize(10).TextColor(t.TextMuted)
+	}, nil)
+	if a.showVars {
+		treeGuide(c, t, func() { a.environmentEditor(c, t) })
+	}
+}
+
+// environmentEditor 环境变量分层编辑：环境选择器 + 全局变量 + 当前环境变量。
+// 运行时"当前环境变量"覆盖同名"全局变量"，可在多套环境间快速切换。
+func (a *App) environmentEditor(c *ui.Context, t *ui.Theme) {
+	ui.Column(c).Gap(6).Children(func() {
+		// 环境选择器：无 / 各环境名。切换时同步到场景与本地缓冲。
+		envs := append([]string{"(无)"}, a.scenario.EnvNames()...)
+		cur := "(无)"
+		if a.scenario.ActiveEnv != "" {
+			cur = a.scenario.ActiveEnv
+		}
+		sel := cur
+		if ui.Select(c, &sel, envs).Label("当前环境").Changed() {
+			if sel == "(无)" {
+				a.scenario.ActiveEnv = ""
+			} else {
+				a.scenario.ActiveEnv = sel
+			}
+			a.activeEnvBuf = a.scenario.ActiveEnv
+		}
+		fieldHint(c, t, "当前环境变量覆盖同名全局变量；运行时优先级：环境变量 > 全局变量。")
+
+		// 新建环境
+		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+			ui.TextInput(c, &a.newEnvName).Placeholder("新环境名").Width(90)
+			if ui.Button(c, "+").Width(26).Tooltip("新建环境").Clicked() {
+				n := strings.TrimSpace(a.newEnvName)
+				if n != "" {
+					if a.scenario.Environments == nil {
+						a.scenario.Environments = map[string]map[string]string{}
+					}
+					if _, exists := a.scenario.Environments[n]; !exists {
+						a.scenario.Environments[n] = map[string]string{}
+						a.scenario.ActiveEnv = n
+						a.activeEnvBuf = n
+					}
+					a.newEnvName = ""
+				}
+			}
+			if a.scenario.ActiveEnv != "" {
+				if ui.Button(c, "✕").Width(26).Tooltip("删除当前环境").Clicked() {
+					delete(a.scenario.Environments, a.scenario.ActiveEnv)
+					a.scenario.ActiveEnv = ""
+					a.activeEnvBuf = ""
+				}
+			}
+		})
+
+		// 全局变量区
+		ui.Text(c, "全局变量").FontSize(11).Bold().TextColor(t.TextMuted)
+		a.variablesEditor(c, t)
+
+		// 当前环境变量区
+		if a.scenario.ActiveEnv != "" {
+			ui.Divider(c)
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "环境 ["+a.scenario.ActiveEnv+"] 变量").FontSize(11).Bold().TextColor(t.Accent)
+			})
+			envVars := a.scenario.Environments[a.scenario.ActiveEnv]
+			a.envVariablesEditor(c, t, envVars)
 		}
 	})
-	if a.showVars {
-		treeGuide(c, t, func() { a.variablesEditor(c, t) })
+}
+
+// envVariablesEditor 编辑指定环境的变量集（key=value），结构同全局变量编辑器。
+func (a *App) envVariablesEditor(c *ui.Context, t *ui.Theme, vars map[string]string) {
+	if vars == nil {
+		return
 	}
+	keys := make([]string, 0, len(vars))
+	for k := range vars {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	ui.Column(c).Gap(4).Children(func() {
+		fieldHint(c, t, "如 baseUrl: https://api.prod.com；切换环境即整组生效")
+		for _, k := range keys {
+			key := k
+			val := vars[key]
+			ui.Row(c.Key("envvar-"+key)).Gap(4).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, key).FontSize(11).Width(78).SingleLine()
+				input := val
+				if ui.TextInput(c, &input).Grow(1).Changed() {
+					vars[key] = input
+				}
+				if ui.Button(c.Key("del"), "×").Width(26).Clicked() {
+					delete(vars, key)
+				}
+			})
+		}
+		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+			ui.TextInput(c, &a.newVarKey).Placeholder("变量名").Width(84)
+			ui.TextInput(c, &a.newVarValue).Placeholder("值").Grow(1)
+			if ui.Button(c, "+").Width(26).Clicked() {
+				k := strings.TrimSpace(a.newVarKey)
+				if k != "" {
+					vars[k] = a.newVarValue
+					a.newVarKey = ""
+					a.newVarValue = ""
+				}
+			}
+		})
+	})
 }
 
 // treeFolderRow 文件夹节点行：展开箭头 + 文件夹图标 + 标题内容 + 尾部操作。
@@ -614,9 +743,14 @@ func (a *App) stepLabel(s model.Step) string {
 
 // ---------- 中间：步骤编辑器 ----------
 func (a *App) editor(c *ui.Context, t *ui.Theme) {
-	// cURL 导入模式：覆盖编辑器区域
+	// cURL / API 定义导入模式：覆盖编辑器区域
 	if a.showImport {
 		a.importPanel(c, t)
+		return
+	}
+	// 请求历史模式
+	if a.showHistory {
+		a.historyPanel(c, t)
 		return
 	}
 	ui.Column(c).Fill().Children(func() {
@@ -742,7 +876,7 @@ func (a *App) debugRequestArea(c *ui.Context, t *ui.Theme) {
 func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Fill().Children(func() {
 		ui.Row(c).Padding(8, 12).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Segmented(c, &a.debugView, "Body", "Headers", "Cookies", "cURL")
+			ui.Segmented(c, &a.debugView, "Body", "Headers", "Cookies", "cURL", "代码")
 			ui.Spacer(c)
 			if a.debugSending {
 				ui.Text(c, "发送中…").FontSize(11).TextColor(t.Accent)
@@ -763,6 +897,11 @@ func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 		})
 		ui.Divider(c)
 		ui.Scroll(c).Grow(1).Padding(10, 12, 10, 12).Children(func() {
+			// 代码生成标签：基于最近一次调试请求生成，无需请求成功即可查看。
+			if a.debugView == 4 {
+				a.codeSnippetView(c, t)
+				return
+			}
 			if a.debugSending || a.debugResult == nil {
 				ui.Column(c).Fill().Center().Gap(6).Children(func() {
 					ui.Icon(c, iconSend).Size(24, 24).TextColor(t.TextMuted)
@@ -799,6 +938,39 @@ func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 				ui.Text(c, res.Formatted).FontSize(11)
 			}
 		})
+	})
+}
+
+// codeSnippetView 代码生成面板：把当前请求转成 Python/Go/JS/cURL 代码片段。
+func (a *App) codeSnippetView(c *ui.Context, t *ui.Theme) {
+	ui.Column(c).Gap(8).Children(func() {
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "代码生成").FontSize(12).Bold()
+			langs := []string{"python", "go", "javascript", "curl"}
+			lang := a.snippetLang
+			if ui.Select(c, &lang, langs).Label("语言").Width(150).Changed() {
+				a.snippetLang = lang
+			}
+			ui.Spacer(c)
+			if ui.Button(c, "⧉ 复制代码").Clicked() {
+				if a.snippetText != "" {
+					_ = mygo.Clipboard.Write(transfer.New(transfer.NewItem(
+						transfer.Bytes(transfer.Text, []byte(a.snippetText)),
+					)))
+					a.log("代码片段已复制到剪贴板")
+				}
+			}
+		})
+		fieldHint(c, t, "基于最近一次调试的请求（已解析 {{变量}}）生成；先发送一次即可得到对应代码。")
+		if a.debugResult == nil || len(a.debugResult.Snippets) == 0 {
+			ui.Column(c).Fill().Center().Gap(6).Children(func() {
+				ui.Text(c, "先点击【发送】，再切换到此标签查看生成的代码。").FontSize(11).TextColor(t.TextMuted)
+			})
+			return
+		}
+		code := a.debugResult.Snippets[a.snippetLang]
+		a.snippetText = code
+		resizableTextArea(c, t, &a.snippetText, &a.importHeight, "", 120, 800)
 	})
 }
 
@@ -842,6 +1014,15 @@ func (a *App) doDebugSend() {
 	a.debugResult = nil
 	go func() {
 		res := engine.Debug(req, vars)
+		// 记录历史（含请求快照），写文件失败仅在日志提示，不影响调试结果。
+		histEntry := history.Entry{
+			Method: res.Method, URL: res.URL, Status: res.StatusCode,
+			DurationMS: res.DurationMS, Error: res.Err, Source: "debug",
+			Headers: req.Headers, BodyType: req.BodyType, Body: req.Body,
+		}
+		if err := history.Append(histEntry); err != nil {
+			logger.Printf("记录请求历史失败: %v", err)
+		}
 		mygo.RunOnMain(func() {
 			a.debugSending = false
 			a.debugResult = res
@@ -918,6 +1099,13 @@ func (a *App) importPanel(c *ui.Context, t *ui.Theme) {
 			})
 			ui.Text(c, "在 Chrome 开发者工具 Network 面板中右键请求 → Copy → Copy as cURL，粘贴到下方，点击解析即可生成请求步骤。").FontSize(11).TextColor(t.TextMuted)
 			ui.Text(c, "支持 bash / cmd / PowerShell 三种复制格式；自动识别 Bearer Token、Cookie、查询参数与请求体。").FontSize(11).TextColor(t.TextMuted)
+			ui.Divider(c)
+			ui.Text(c, "或导入整个 API 定义").FontSize(12).Bold()
+			fieldHint(c, t, "支持 Postman Collection v2.1 / OpenAPI 3.x / Swagger 2.0；自动转成多步骤场景（文件夹/路径展开为步骤，变量/认证/Body 保留）。")
+			if ui.Button(c, "📂 导入 Postman / OpenAPI 文件").Clicked() {
+				a.importAPIFile()
+			}
+			ui.Divider(c)
 			resizableTextArea(c, t, &a.importText, &a.importHeight,
 				"curl 'https://api.example.com/orders?page=1' \\\n  -H 'authorization: Bearer xxx' \\\n  -H 'cookie: session=abc'", 80, 900)
 			if a.importMsg != "" {
@@ -938,6 +1126,128 @@ func (a *App) importPanel(c *ui.Context, t *ui.Theme) {
 			}
 		})
 	})
+}
+
+// openHistory 加载历史并切换到历史面板。
+func (a *App) openHistory() {
+	entries, err := history.Load()
+	if err != nil {
+		a.historyMsg = "✗ 读取历史失败: " + err.Error()
+	} else {
+		a.historyMsg = ""
+	}
+	a.historyList = entries
+	a.showHistory = true
+	a.showImport = false
+	a.mainTab = 0
+}
+
+// historyPanel 请求历史面板：列表回看、重新载入调试、清空。
+func (a *App) historyPanel(c *ui.Context, t *ui.Theme) {
+	ui.Column(c).Fill().Children(func() {
+		ui.Row(c).Gap(10).Padding(14, 16).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "请求历史").FontSize(15).Bold()
+			ui.Text(c, fmt.Sprintf("共 %d 条（exe 同目录 requestflow-history.jsonl）", len(a.historyList))).FontSize(10).TextColor(t.TextMuted)
+			ui.Spacer(c)
+			if ui.Button(c, "↻ 刷新").Clicked() {
+				a.openHistory()
+			}
+			if ui.Button(c, "🗑 清空").Clicked() {
+				if err := history.Clear(); err != nil {
+					a.historyMsg = "✗ 清空失败: " + err.Error()
+				} else {
+					a.historyList = []history.Entry{}
+					a.historyMsg = "已清空历史"
+				}
+			}
+			if ui.Button(c, "✕ 关闭").Clicked() {
+				a.showHistory = false
+				a.historyMsg = ""
+			}
+		})
+		if a.historyMsg != "" {
+			ui.Row(c).Padding(0, 16, 6, 16).Children(func() {
+				ui.Text(c, a.historyMsg).FontSize(11).TextColor(t.Accent)
+			})
+		}
+		ui.Scroll(c).Grow(1).Padding(6, 16, 16, 16).Gap(4).Children(func() {
+			if len(a.historyList) == 0 {
+				ui.Text(c, "暂无历史。发送一次调试请求后会自动记录。").FontSize(11).TextColor(t.TextMuted)
+				return
+			}
+			for _, e := range a.historyList {
+				ent := e
+				ui.Row(c).Gap(8).Padding(8, 10).AlignItems(ui.Center).Children(func() {
+					ui.Box(c).Width(5).Height(24).Radius(2).Background(methodColor(ent.Method))
+					ui.Column(c).Grow(1).Gap(2).Children(func() {
+						ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+							ui.Text(c, ent.Method).FontSize(11).Bold().Width(52)
+							ui.Text(c, previewURL(ent.URL)).FontSize(11)
+						})
+						status := ""
+						if ent.Error != "" {
+							status = "失败: " + ent.Error
+						} else {
+							status = fmt.Sprintf("%d · %d ms · %s", ent.Status, ent.DurationMS, ent.Source)
+						}
+						ui.Text(c, ent.Time+"  "+status).FontSize(10).TextColor(t.TextMuted)
+					})
+					if ui.Button(c, "载入调试").Clicked() {
+						a.loadHistoryToDebug(ent)
+					}
+				})
+			}
+		})
+	})
+}
+
+// loadHistoryToDebug 把一条历史记录的请求快照载回调试面板。
+func (a *App) loadHistoryToDebug(e history.Entry) {
+	a.debugMethod = e.Method
+	a.debugURL = e.URL
+	a.debugHeaders = mapToString(e.Headers)
+	a.debugBodyType = e.BodyType
+	if e.BodyType == "" {
+		a.debugBodyType = "raw"
+	}
+	a.debugBody = e.Body
+	a.showHistory = false
+	a.mainTab = 1
+	a.debugResult = nil
+	a.log("已载入历史请求，可编辑后重新发送")
+}
+
+// importAPIFile 选择 Postman Collection / OpenAPI / Swagger 文件并导入为场景。
+func (a *App) importAPIFile() {
+	go func() {
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+			Title:   "选择 API 定义文件（Postman / OpenAPI / Swagger）",
+			Filters: []mygo.FileFilter{
+				{Name: "API 定义", Extensions: []string{"json"}},
+				{Name: "所有文件", Extensions: []string{"*"}},
+			},
+		})
+		if err != nil || len(paths) == 0 {
+			return
+		}
+		data, err := os.ReadFile(paths[0])
+		if err != nil {
+			mygo.RunOnMain(func() { a.importMsg = "✗ 读取文件失败: " + err.Error() })
+			return
+		}
+		sc, impErr := importer.Import(data)
+		if impErr != nil {
+			mygo.RunOnMain(func() { a.importMsg = "✗ 导入失败: " + impErr.Error() })
+			return
+		}
+		base := filepath.Base(paths[0])
+		mygo.RunOnMain(func() {
+			a.applyLoadedScenario(sc, "")
+			a.showImport = false
+			a.importMsg = ""
+			a.log(fmt.Sprintf("已导入 %s：%d 个步骤，%d 个全局变量", base, len(sc.Steps), len(sc.Variables)))
+		})
+	}()
 }
 
 // doImportCurl 解析粘贴的 cURL，成功则生成一个 request 步骤追加到场景末尾。
@@ -1065,8 +1375,40 @@ func (a *App) editorRequest(c *ui.Context, t *ui.Theme, step *model.Step) {
 		&step.AuthTokenURL, &step.AuthClientID, &step.AuthClientSecret, &step.AuthScope, &step.AuthGrantType)
 
 	ui.Divider(c)
+	a.editorRequestScripts(c, t, step)
 	a.editorExtract(c, t, step)
 	a.editorAssertList(c, t, step)
+}
+
+// editorRequestScripts 请求级脚本（Postman 风格 Pre-request / Tests）。
+// Pre-request 在发请求前执行、可改写本次请求变量；Tests 在响应后执行、可读写变量。
+func (a *App) editorRequestScripts(c *ui.Context, t *ui.Theme, step *model.Step) {
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, "请求脚本").FontSize(12).Bold()
+		langs := []string{"js", "python"}
+		lang := step.ScriptLang
+		if lang == "" {
+			lang = "js"
+		}
+		if ui.Select(c, &lang, langs).Label("语言").Width(130).Changed() {
+			step.ScriptLang = lang
+		}
+	})
+	fieldHint(c, t, "Pre-request 在请求前执行（vars 读写变量，可影响本次 URL/头/体）；Tests 在响应后执行（last 取响应）。")
+	ui.Row(c).Gap(10).Children(func() {
+		ui.Column(c).Grow(1).Children(func() {
+			ui.Text(c, "Pre-request Script").FontSize(11).Bold()
+			fieldHint(c, t, "示例：vars.token = 'abc'（JS）")
+			resizableTextArea(c, t, &step.PreScript, &a.preScriptHeight,
+				"// vars.foo = 'bar'", 48, 400)
+		})
+		ui.Column(c).Grow(1).Children(func() {
+			ui.Text(c, "Tests (PostScript)").FontSize(11).Bold()
+			fieldHint(c, t, "示例：vars.saved = last.json.data.id（JS）")
+			resizableTextArea(c, t, &step.PostScript, &a.postScriptHeight,
+				"// vars.saved = last.json.data.id", 48, 400)
+		})
+	})
 }
 
 func (a *App) editorExtract(c *ui.Context, t *ui.Theme, step *model.Step) {
