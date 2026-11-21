@@ -231,6 +231,12 @@ type App struct {
 	preScriptHeight  float32
 	postScriptHeight float32
 	tcpSendHeight    float32
+
+	// 内容格式化按钮的临时状态提示
+	scriptFmtMsg    string
+	bodyFmtMsg      string
+	gqlFmtMsg       string
+	debugBodyFmtMsg string
 }
 
 // Run 启动 GUI。
@@ -402,14 +408,17 @@ func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
 		}
 		ui.Divider(c).Height(20)
 
-		// ── 数据组：导入 cURL / 数据驱动 ──
+		// ── 数据组：导入（统一入口）/ 数据驱动 ──
 		ui.Text(c, "数据").FontSize(9).TextColor(t.TextMuted)
-		if ui.Button(c, "⇥ 导入 cURL").Tooltip("从 Chrome DevTools 复制的 cURL 解析成请求步骤").Clicked() {
-			a.showImport = true
-			a.showHistory = false
-			a.importMsg = ""
-			a.mainTab = 0
-		}
+		// 导入入口统一到一个菜单，避免 cURL 与 Postman/OpenAPI 分散两处让用户找错。
+		ui.PopoverMenuButton(c, "⇩ 导入", func(m *ui.Menu) {
+			if m.Item("⇥ 从 cURL 粘贴").Chosen() {
+				a.openImport("curl")
+			}
+			if m.Item("⇩ 导入 Postman / OpenAPI 文件").Chosen() {
+				a.openImport("file")
+			}
+		})
 		if ui.Button(c, "⊞ 数据驱动").Tooltip("用 CSV/JSON 数据逐行运行场景").Clicked() {
 			a.pickDataFile()
 		}
@@ -434,17 +443,45 @@ func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
 				a.exportReport()
 			}
 			m.Separator()
-			if m.Item("⇩ 导入 Postman / OpenAPI").Chosen() {
-				a.showImport = true
-				a.showHistory = false
-				a.importMsg = ""
-				a.mainTab = 0
-			}
 			if m.Item("ⓘ 关于 RequestFlow " + version.Short()).Chosen() {
 				a.showAbout()
 			}
 		})
 	})
+}
+
+// confirmDeleteEnv 删除当前环境前二次确认，避免误删整组环境变量。
+func (a *App) confirmDeleteEnv() {
+	env := a.scenario.ActiveEnv
+	if env == "" {
+		return
+	}
+	go func() {
+		res, _ := mygo.Dialog.Message(mygo.MessageOptions{
+			Parent:  a.win,
+			Type:    mygo.MessageWarning,
+			Title:   "删除环境",
+			Message: "确定删除环境「" + env + "」及其全部变量吗？此操作不可撤销。",
+			Buttons: []string{"取消", "删除"},
+		})
+		if res.Button == 1 {
+			delete(a.scenario.Environments, env)
+			a.scenario.ActiveEnv = ""
+			a.activeEnvBuf = ""
+			a.log("已删除环境 " + env)
+		}
+	}()
+}
+
+// openImport 统一导入入口：curl=打开粘贴面板，file=选择 Postman/OpenAPI 文件。
+func (a *App) openImport(mode string) {
+	a.showImport = true
+	a.showHistory = false
+	a.importMsg = ""
+	a.mainTab = 0
+	if mode == "file" {
+		a.importAPIFile()
+	}
 }
 
 // showAbout 弹出"关于"对话框展示完整版本信息。
@@ -556,9 +593,7 @@ func (a *App) environmentEditor(c *ui.Context, t *ui.Theme) {
 			}
 			if a.scenario.ActiveEnv != "" {
 				if ui.Button(c, "✕").Width(26).Tooltip("删除当前环境").Clicked() {
-					delete(a.scenario.Environments, a.scenario.ActiveEnv)
-					a.scenario.ActiveEnv = ""
-					a.activeEnvBuf = ""
+					a.confirmDeleteEnv()
 				}
 			}
 		})
@@ -584,40 +619,8 @@ func (a *App) envVariablesEditor(c *ui.Context, t *ui.Theme, vars map[string]str
 	if vars == nil {
 		return
 	}
-	keys := make([]string, 0, len(vars))
-	for k := range vars {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	ui.Column(c).Gap(4).Children(func() {
-		fieldHint(c, t, "如 baseUrl: https://api.prod.com；切换环境即整组生效")
-		for _, k := range keys {
-			key := k
-			val := vars[key]
-			ui.Row(c.Key("envvar-" + key)).Gap(4).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, key).FontSize(11).Width(78).SingleLine()
-				input := val
-				if ui.TextInput(c, &input).Grow(1).Changed() {
-					vars[key] = input
-				}
-				if ui.Button(c.Key("del"), "×").Width(26).Clicked() {
-					delete(vars, key)
-				}
-			})
-		}
-		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-			ui.TextInput(c, &a.newVarKey).Placeholder("变量名").Width(84)
-			ui.TextInput(c, &a.newVarValue).Placeholder("值").Grow(1)
-			if ui.Button(c, "+").Width(26).Clicked() {
-				k := strings.TrimSpace(a.newVarKey)
-				if k != "" {
-					vars[k] = a.newVarValue
-					a.newVarKey = ""
-					a.newVarValue = ""
-				}
-			}
-		})
-	})
+	keyValueRows(c, t, vars, &a.newVarKey, &a.newVarValue,
+		"如 baseUrl: https://api.prod.com；切换环境即整组生效", 78)
 }
 
 // treeFolderRow 文件夹节点行：展开箭头 + 文件夹图标 + 标题内容 + 尾部操作。
@@ -651,46 +654,58 @@ func treeBranch(c *ui.Context, t *ui.Theme) {
 	ui.Box(c).Width(10).Height(1).Background(t.Border.Mix(t.Surface, 0.2))
 }
 
+// keyValueRows 渲染一个通用的 key=value 映射编辑器：逐行展示已有键值对（可编辑、删除），
+// 底部提供新增行。newKey/newValue 为「新行」输入缓冲，由调用方持有以跨帧保留。
+// 供全局变量、环境变量等复用，消除重复的增删改样板。
+func keyValueRows(c *ui.Context, t *ui.Theme, vars map[string]string,
+	newKey, newValue *string, topHint string, keyWidth float32) {
+	if keyWidth <= 0 {
+		keyWidth = 110
+	}
+	ui.Column(c).Gap(4).Children(func() {
+		if topHint != "" {
+			fieldHint(c, t, topHint)
+		}
+		keys := make([]string, 0, len(vars))
+		for k := range vars {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			key := k
+			val := vars[key]
+			ui.Row(c.Key("kv-" + key)).Gap(4).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, key).FontSize(11).Width(keyWidth).SingleLine()
+				input := val
+				if ui.TextInput(c, &input).Grow(1).Changed() {
+					vars[key] = input
+				}
+				if ui.Button(c.Key("del"), "×").Width(26).Tooltip("删除此变量").Clicked() {
+					delete(vars, key)
+				}
+			})
+		}
+		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+			ui.TextInput(c, newKey).Placeholder("变量名").Width(keyWidth - 26)
+			ui.TextInput(c, newValue).Placeholder("值").Grow(1)
+			if ui.Button(c, "+").Width(26).Tooltip("添加变量").Clicked() {
+				k := strings.TrimSpace(*newKey)
+				if k != "" {
+					vars[k] = *newValue
+					*newKey, *newValue = "", ""
+				}
+			}
+		})
+	})
+}
+
 // variablesEditor 可视化编辑全局变量（key=value），直接读写 scenario.Variables。
 func (a *App) variablesEditor(c *ui.Context, t *ui.Theme) {
 	if a.scenario.Variables == nil {
 		a.scenario.Variables = map[string]string{}
 	}
-	keys := make([]string, 0, len(a.scenario.Variables))
-	for k := range a.scenario.Variables {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	ui.Column(c).Gap(4).Children(func() {
-		ui.Text(c, "用 {{key}} 在步骤中引用").FontSize(10).TextColor(t.TextMuted)
-		for _, k := range keys {
-			key := k
-			val := a.scenario.Variables[key]
-			ui.Row(c.Key("var-" + key)).Gap(4).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, key).FontSize(11).Width(78).SingleLine()
-				input := val
-				if ui.TextInput(c, &input).Grow(1).Changed() {
-					a.scenario.Variables[key] = input
-				}
-				if ui.Button(c.Key("del"), "×").Width(26).Clicked() {
-					delete(a.scenario.Variables, key)
-				}
-			})
-		}
-		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-			ui.TextInput(c, &a.newVarKey).Placeholder("变量名").Width(84)
-			ui.TextInput(c, &a.newVarValue).Placeholder("值").Grow(1)
-			if ui.Button(c, "+").Width(26).Clicked() {
-				k := strings.TrimSpace(a.newVarKey)
-				if k != "" {
-					a.scenario.Variables[k] = a.newVarValue
-					a.newVarKey = ""
-					a.newVarValue = ""
-				}
-			}
-		})
-	})
+	keyValueRows(c, t, a.scenario.Variables, &a.newVarKey, &a.newVarValue,
+		"用 {{key}} 在步骤中引用", 78)
 }
 
 func (a *App) addMenu(c *ui.Context, t *ui.Theme) {
@@ -771,7 +786,7 @@ func (a *App) stepList(c *ui.Context, t *ui.Theme) {
 					name = string(step.Type)
 				}
 				b := ui.Button(c, name).Grow(1).
-					Tooltip("单击选中并配置；双击 HTTP 请求进入调试")
+					Tooltip("点击选中并配置；双击 HTTP 请求进入调试")
 				if selected {
 					b = b.Background(t.Accent.Mix(t.Surface, 0.86)).TextColor(t.Accent).Bold()
 				}
@@ -840,11 +855,8 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 	}
 	ui.Column(c).Fill().Children(func() {
 		if a.selectedStep < 0 || a.selectedStep >= len(a.scenario.Steps) {
-			ui.Column(c).Fill().Center().Gap(8).Children(func() {
-				ui.Text(c, "选择一个步骤进行配置").FontSize(15).Bold().TextColor(t.TextMuted)
-				ui.Text(c, "单击左侧步骤查看配置，双击请求步骤进入调试").FontSize(11).TextColor(t.TextMuted)
-				ui.Text(c, "内置：登录提取、HTTP 请求、循环翻页、数据处理、JS 脚本、断言、导出").FontSize(11).TextColor(t.TextMuted)
-			})
+			emptyState(c, t, "选择一个步骤进行配置",
+				"单击左侧步骤查看配置，双击请求步骤进入调试；内置登录提取、HTTP、循环翻页、数据处理、脚本、断言、导出")
 			return
 		}
 		step := &a.scenario.Steps[a.selectedStep]
@@ -949,7 +961,7 @@ func (a *App) debugRequestArea(c *ui.Context, t *ui.Theme) {
 				resizableTextArea(c, t, &a.debugHeaders, &a.headersHeight, "Authorization: Bearer {{token}}", 40, 600)
 			case 2: // Body
 				bodyEditor(c, t, &a.debugBodyType, &a.debugBody, &a.debugFormData,
-					&a.debugGQLQuery, &a.debugGQLVars, &a.bodyHeight, `{"key": "{{value}}"}`)
+					&a.debugGQLQuery, &a.debugGQLVars, &a.bodyHeight, `{"key": "{{value}}"}`, &a.debugBodyFmtMsg)
 			case 3: // Authorization
 				authEditor(c, t, &a.debugAuthType, &a.debugAuthToken, &a.debugUser, &a.debugPass,
 					&a.debugKeyName, &a.debugKeyValue, &a.debugKeyIn,
@@ -1359,6 +1371,36 @@ func (a *App) doImportCurl() {
 }
 
 // clampHeight 把拖拽后的高度限制在 [min, max] 内。
+// emptyState 渲染居中的空状态占位：主提示 + 可选副提示，统一各面板无数据时的视觉。
+func emptyState(c *ui.Context, t *ui.Theme, title, subtitle string) {
+	ui.Column(c).Fill().Center().Gap(6).Children(func() {
+		ui.Text(c, title).FontSize(13).Bold().TextColor(t.TextMuted)
+		if subtitle != "" {
+			ui.Text(c, subtitle).FontSize(11).TextColor(t.TextMuted)
+		}
+	})
+}
+
+// intInput 渲染一个整数输入框，把字符串编辑值同步回 *int；解析失败时保留原值。
+// 统一处理 fmt.Sprint/parseInt 样板，供循环/翻页等数字字段复用。
+func intInput(c *ui.Context, target *int, label, placeholder string, width float32) {
+	s := fmt.Sprint(*target)
+	if placeholder != "" && *target == 0 {
+		s = ""
+	}
+	input := ui.TextInput(c, &s).Label(label).Placeholder(placeholder)
+	if width > 0 {
+		input.Width(width)
+	} else {
+		input.Grow(1)
+	}
+	if s != "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+			*target = n
+		}
+	}
+}
+
 func clampHeight(v, min, max float32) float32 {
 	if v < min {
 		return min
@@ -1372,7 +1414,8 @@ func clampHeight(v, min, max float32) float32 {
 // fieldHint 在字段下方渲染一行浅灰色注释，说明该字段的用途或格式。
 // 组件配置统一用它给出填写指引，降低界面配置的学习成本。
 func fieldHint(c *ui.Context, t *ui.Theme, text string) {
-	ui.Text(c, "  ⓘ "+text).FontSize(10).TextColor(t.TextMuted)
+	// 提示文字略提亮，避免 10px 灰字在浅色主题下对比度不足难以阅读。
+	ui.Text(c, "  ⓘ "+text).FontSize(10).TextColor(t.TextMuted.Mix(t.Text, 0.3))
 }
 
 // resizableTextArea 渲染一个可拖拽调整高度的多行文本框。
@@ -1395,6 +1438,30 @@ func resizableTextArea(c *ui.Context, t *ui.Theme, value *string, height *float3
 			ui.Icon(c, resizeGripIcon).Size(16, 16).TextColor(t.Text.Mix(t.TextMuted, 0.35))
 		})
 	})
+}
+
+// formattedTextArea 在可拖拽文本框上方加一个「格式化」按钮，点击后自动美化内容
+// （JSON/XML/HTML/键值对），并在按钮旁短暂显示识别到的类型。
+// status 是每次渲染重置的临时提示缓冲，由 App 各编辑区持有。
+func formattedTextArea(c *ui.Context, t *ui.Theme, value *string, height *float32,
+	placeholder string, min, max float32, status *string) {
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		if ui.Button(c, "✨ 格式化").Tooltip("自动美化内容：JSON / XML / HTML / 键值对").Clicked() {
+			out, kind, changed := FormatContent(*value)
+			if changed {
+				*value = out
+				*status = "已按 " + kind + " 格式化"
+			} else if kind != "" {
+				*status = kind + " 已是规范格式"
+			} else {
+				*status = "未识别可格式化的内容"
+			}
+		}
+		if *status != "" {
+			ui.Text(c, *status).FontSize(10).TextColor(t.TextMuted)
+		}
+	})
+	resizableTextArea(c, t, value, height, placeholder, min, max)
 }
 
 // previewURL 截断 URL 用于日志显示。
@@ -1446,7 +1513,7 @@ func (a *App) editorRequest(c *ui.Context, t *ui.Theme, step *model.Step) {
 		ui.Text(c, "请求体 Body").FontSize(11).Bold()
 	})
 	bodyEditor(c, t, &step.BodyType, &step.Body, &step.FormData,
-		&step.GraphQLQuery, &step.GraphQLVariables, &a.bodyHeight, `{"key": "{{value}}"}`)
+		&step.GraphQLQuery, &step.GraphQLVariables, &a.bodyHeight, `{"key": "{{value}}"}`, &a.bodyFmtMsg)
 
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		if ui.Button(c, "⚡ 试发送此请求").Clicked() {
@@ -2037,10 +2104,7 @@ func (a *App) editorLoop(c *ui.Context, t *ui.Theme, step *model.Step) {
 
 	switch lp.Mode {
 	case "count":
-		count := fmt.Sprint(lp.Count)
-		if ui.TextInput(c, &count).Label("次数 Count").Width(140).Changed() {
-			lp.Count, _ = parseInt(count)
-		}
+		intInput(c, &lp.Count, "次数 Count", "", 140)
 	case "foreach":
 		// 三个短变量一行排列。
 		ui.Row(c).Gap(8).Children(func() {
@@ -2059,18 +2123,9 @@ func (a *App) editorLoop(c *ui.Context, t *ui.Theme, step *model.Step) {
 		if ui.TextInput(c, &pageVar).Label("页码变量").Grow(1).Changed() {
 			lp.PageVar = pageVar
 		}
-		ps := fmt.Sprint(lp.PageStart)
-		if ui.TextInput(c, &ps).Label("起始页").Width(80).Changed() {
-			lp.PageStart, _ = parseInt(ps)
-		}
-		pstep := fmt.Sprint(lp.PageStep)
-		if ui.TextInput(c, &pstep).Label("步长").Width(70).Changed() {
-			lp.PageStep, _ = parseInt(pstep)
-		}
-		max := fmt.Sprint(lp.Max)
-		if ui.TextInput(c, &max).Label("最大轮数").Width(88).Changed() {
-			lp.Max, _ = parseInt(max)
-		}
+		intInput(c, &lp.PageStart, "起始页", "", 80)
+		intInput(c, &lp.PageStep, "步长", "", 70)
+		intInput(c, &lp.Max, "最大轮数", "", 88)
 	})
 	fieldHint(c, t, "翻页时在 URL 用 {{页码变量}}（默认 page）；最大轮数用于兜底防止死循环。")
 
@@ -2114,7 +2169,7 @@ func (a *App) editorLoop(c *ui.Context, t *ui.Theme, step *model.Step) {
 				ui.TextInput(c, &child.Body).Label("Body")
 				a.editorExtract(c, t, child)
 			} else {
-				ops := []string{"set", "append", "json_to_table", "filter", "sort", "pick", "flatten", "format_time"}
+				ops := []string{"set", "append", "json_to_table", "filter", "sort", "pick", "flatten", "dedup", "format_time"}
 				op := child.Op
 				if op == "" {
 					op = "set"
@@ -2135,7 +2190,7 @@ func (a *App) editorLoop(c *ui.Context, t *ui.Theme, step *model.Step) {
 }
 
 func (a *App) editorProcess(c *ui.Context, t *ui.Theme, step *model.Step) {
-	ops := []string{"set", "append", "json_to_table", "filter", "sort", "pick", "flatten", "format_time", "join", "base64encode", "base64decode", "urlencode", "urldecode"}
+	ops := []string{"set", "append", "json_to_table", "filter", "sort", "pick", "flatten", "dedup", "format_time", "join", "base64encode", "base64decode", "urlencode", "urldecode"}
 	op := step.Op
 	if op == "" {
 		op = "json_to_table"
@@ -2151,6 +2206,7 @@ func (a *App) editorProcess(c *ui.Context, t *ui.Theme, step *model.Step) {
 		"sort":          "排序：from, field, order(asc/desc), to",
 		"pick":          "取字段：from, fields(逗号分隔), to",
 		"flatten":       "合并数组：from(逗号分隔的多个变量), to",
+		"dedup":         "去重：from=源数组变量, to=目标变量；field 按对象字段去重，stat 写入去掉的重复数",
 		"format_time":   "时间格式化：from, in(unix/unixms), layout, to",
 		"join":          "拼接：values(a,b,c), sep, to",
 		"base64encode":  "Base64 编码：from=源变量, to=目标变量",
@@ -2191,6 +2247,21 @@ func (a *App) editorScript(c *ui.Context, t *ui.Theme, step *model.Step) {
 		fieldHint(c, t, "JavaScript（goja）：vars（读写变量）、last（最近响应 status/body/json）、log()、JSON.stringify/parse。")
 		fieldHint(c, t, "示例：vars.token = last.json.data.token;  log('取到 token');")
 	}
+	// 内容格式化：脚本通常不是结构化数据，但常被用来粘贴 JSON 样例，提供一键美化。
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		if ui.Button(c, "✨ 格式化").Tooltip("若内容是 JSON/XML/键值对则一键美化").Clicked() {
+			out, kind, changed := FormatContent(step.Code)
+			if changed {
+				step.Code = out
+				a.scriptFmtMsg = "已按 " + kind + " 格式化"
+			} else {
+				a.scriptFmtMsg = "脚本内容无需格式化（仅支持 JSON/XML/键值对）"
+			}
+		}
+		if a.scriptFmtMsg != "" {
+			ui.Text(c, a.scriptFmtMsg).FontSize(10).TextColor(t.TextMuted)
+		}
+	})
 	ui.TextArea(c, &step.Code).Height(240)
 }
 
@@ -2284,10 +2355,7 @@ func (a *App) tabularVars() []string {
 func (a *App) resultView(c *ui.Context, t *ui.Theme) {
 	names := a.tabularVars()
 	if len(names) == 0 {
-		ui.Column(c).Fill().Center().Gap(6).Children(func() {
-			ui.Text(c, "暂无可展示的表格数据").FontSize(13).Bold().TextColor(t.TextMuted)
-			ui.Text(c, "运行场景后，从响应提取的数组/JSON 数据会在此以表格显示").FontSize(11).TextColor(t.TextMuted)
-		})
+		emptyState(c, t, "暂无可展示的表格数据", "运行场景后，从响应提取的数组/JSON 数据会在此以表格显示")
 		return
 	}
 	// 选中变量有效性检查
@@ -2518,19 +2586,51 @@ func containsStr(list []string, s string) bool {
 	return false
 }
 
+// truncateRunes 按 rune 截断字符串（避免中文按字节截断乱码）。
+func truncateRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max]) + "…"
+}
+
+// showErrorDetail 弹框显示完整错误，供状态栏失败信息点击查看。
+func (a *App) showErrorDetail(detail string) {
+	go func() {
+		_, _ = mygo.Dialog.Message(mygo.MessageOptions{
+			Parent:  a.win,
+			Type:    mygo.MessageError,
+			Title:   "运行失败详情",
+			Message: detail,
+			Buttons: []string{"确定"},
+		})
+	}()
+}
+
 func (a *App) statusBar(c *ui.Context, t *ui.Theme) {
 	ui.Row(c).Padding(6, 12).AlignItems(ui.Center).Children(func() {
 		status := "就绪"
+		failDetail := ""
 		if a.running {
 			status = "运行中…"
 		} else if a.lastResult != nil {
 			if a.lastResult.OK {
 				status = fmt.Sprintf("完成 · %d 变量", len(a.lastResult.Vars))
 			} else {
-				status = "失败：" + resultErrText(a.lastResult)
+				failDetail = resultErrText(a.lastResult)
+				status = "失败：" + failDetail
 			}
 		}
-		ui.Text(c, status).FontSize(10).TextColor(t.TextMuted)
+		if failDetail != "" {
+			// 失败信息可能很长，点击状态栏弹出完整错误详情。
+			if ui.Button(c, truncateRunes(status, 100)).FontSize(10).TextColor(t.Danger).
+				Tooltip("点击查看完整错误").Clicked() {
+				a.showErrorDetail(failDetail)
+			}
+		} else {
+			ui.Text(c, status).FontSize(10).TextColor(t.TextMuted)
+		}
 		ui.Spacer(c)
 		if a.filePath != "" {
 			ui.Text(c, a.filePath).FontSize(10).TextColor(t.TextMuted)
@@ -3040,7 +3140,7 @@ var authTypes = []string{"none", "bearer", "basic", "apikey", "oauth2"}
 
 // bodyEditor 渲染请求体类型选择 + 对应编辑控件。 pointers 让步骤编辑器与调试面板复用。
 func bodyEditor(c *ui.Context, t *ui.Theme, bodyType *string, body *string, form *[]model.FormField,
-	gqlQuery *string, gqlVars *string, height *float32, placeholder string) {
+	gqlQuery *string, gqlVars *string, height *float32, placeholder string, fmtMsg *string) {
 	bt := *bodyType
 	if bt == "" {
 		bt = "raw"
@@ -3058,7 +3158,11 @@ func bodyEditor(c *ui.Context, t *ui.Theme, bodyType *string, body *string, form
 			hint = "填写要上传的文件路径，以 application/octet-stream 发送。"
 		}
 		fieldHint(c, t, hint)
-		resizableTextArea(c, t, body, height, placeholder, 40, 800)
+		if fmtMsg != nil {
+			formattedTextArea(c, t, body, height, placeholder, 40, 800, fmtMsg)
+		} else {
+			resizableTextArea(c, t, body, height, placeholder, 40, 800)
+		}
 	case "form-data", "urlencoded":
 		fieldHint(c, t, "逐行添加字段；类型选 file 时值为本地文件路径（form-data 支持上传）。")
 		fields := *form
