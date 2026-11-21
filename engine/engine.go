@@ -13,11 +13,11 @@ import (
 
 // Event 执行过程中产生的事件，UI 订阅它实时显示日志与步骤状态。
 type Event struct {
-	Type    string // step-start | step-done | step-error | log | loop-iter | done
-	StepID  string
+	Type     string // step-start | step-done | step-error | log | loop-iter | done
+	StepID   string
 	StepName string
-	Message string
-	Time    time.Time
+	Message  string
+	Time     time.Time
 }
 
 // Result 单次执行的汇总结果。
@@ -554,6 +554,27 @@ func (e *Engine) runLoop(step model.Step, depth int) error {
 		page += lp.PageStep
 		if lp.PageStep == 0 {
 			page = lp.PageStart + i + 1
+		}
+	}
+
+	// 循环结束后的累积去重（P1）：对指定数组变量按字段去重，并提示去掉的重复数。
+	if strings.TrimSpace(lp.DedupVar) != "" {
+		name := strings.TrimSpace(lp.DedupVar)
+		list, ok := toSlice(e.ctx.Get(name))
+		if !ok {
+			e.emit("log", step.ID, step.Name, fmt.Sprintf("去重跳过：变量 %s 不是数组", name))
+		} else {
+			deduped, removed := dedupByField(list, strings.TrimSpace(lp.DedupField))
+			e.ctx.Set(name, deduped)
+			field := strings.TrimSpace(lp.DedupField)
+			if field == "" {
+				field = "整行"
+			}
+			e.emit("log", step.ID, step.Name, fmt.Sprintf("累积去重[%s=%s]：%d 行 → %d 行，去掉 %d 条重复",
+				name, field, len(list), len(deduped), removed))
+			if stat := strings.TrimSpace(lp.DedupStat); stat != "" {
+				e.ctx.Set(stat, removed)
+			}
 		}
 	}
 	return nil

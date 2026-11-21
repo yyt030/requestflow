@@ -159,6 +159,8 @@ type App struct {
 	resultVar   string
 	resultState ui.ListState
 	resultCols  []ui.TableColumn
+	// 变量预览（P1）：数组/对象变量的可展开状态，按变量名记录。
+	varExpanded map[string]bool
 	// 全局变量编辑
 	showVars    bool
 	newVarKey   string
@@ -168,6 +170,10 @@ type App struct {
 	showImport bool
 	importText string
 	importMsg  string
+
+	// 场景模板/新建向导
+	showTemplateWizard bool
+	templateIndex      int
 
 	// 主工作区标签：0=步骤编排 1=接口调试 2=运行结果（Postman 风格标签式工作区）
 	mainTab int
@@ -252,6 +258,7 @@ func Run() {
 		snippetLang:      "python",
 		showSteps:        true,
 		showVars:         true,
+		varExpanded:      map[string]bool{},
 	}
 	app.logs = append(app.logs, "就绪。打开或新建场景，配置步骤后点击【一键运行】。")
 	mygo.App.WhenReady(func() {
@@ -296,6 +303,62 @@ func (a *App) view(c *ui.Context) {
 			})
 		}).Grow(1)
 		a.statusBar(c, t)
+		// 新建场景向导：以 Modal 覆盖窗口，选择模板或空白场景。
+		ui.Modal(c, &a.showTemplateWizard, func() {
+			a.templateWizard(c, t)
+		})
+	})
+}
+
+// templateWizard 渲染新建场景的模板选择向导。
+func (a *App) templateWizard(c *ui.Context, t *ui.Theme) {
+	templates := scenarioTemplates()
+	if a.templateIndex >= len(templates) {
+		a.templateIndex = 0
+	}
+	ui.Column(c).Width(560).Padding(20).Gap(10).Background(t.Surface).Radius(12).Children(func() {
+		ui.Text(c, "新建场景").FontSize(18).Bold()
+		ui.Text(c, "选择模板快速开始，之后可自由修改步骤与参数。").FontSize(11).TextColor(t.TextMuted)
+		ui.Divider(c)
+		ui.Scroll(c).Height(320).Gap(6).Children(func() {
+			for i, tpl := range templates {
+				i, tpl := i, tpl
+				selected := i == a.templateIndex
+				row := ui.ButtonBase(c.Key(fmt.Sprintf("tpl-%d", i))).Padding(10).Radius(8).
+					AlignItems(ui.Center).Cursor(ui.CursorPointer)
+				if selected {
+					row.Background(t.Accent.Mix(t.Surface, 0.88))
+				} else if row.Hovered() {
+					row.Background(t.SurfaceHover)
+				}
+				row.Children(func() {
+					ui.Column(c).Gap(3).Children(func() {
+						ui.Text(c, tpl.Name).FontSize(13).Bold().TextColor(func() ui.Color {
+							if selected {
+								return t.Accent
+							}
+							return t.Text
+						}())
+						ui.Text(c, tpl.Desc).FontSize(10).TextColor(t.TextMuted)
+					})
+				})
+				if row.Clicked() {
+					a.templateIndex = i
+				}
+				if row.DoubleClicked() {
+					a.applyTemplate(tpl)
+				}
+			}
+		})
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Spacer(c)
+			if ui.Button(c, "取消").Clicked() {
+				a.showTemplateWizard = false
+			}
+			if ui.PrimaryButton(c, "使用模板").Clicked() {
+				a.applyTemplate(templates[a.templateIndex])
+			}
+		})
 	})
 }
 
@@ -304,9 +367,9 @@ func (a *App) consoleOnly(c *ui.Context, t *ui.Theme) {
 	a.console(c, t)
 }
 
-// ---------- 顶部工具栏（Postman 风格：品牌 + 场景 + 操作） ----------
+// ---------- 顶部工具栏（Postman 风格：品牌 + 场景 + 文件/数据/运行分组 + 溢出菜单） ----------
 func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
-	ui.Row(c).Gap(10).Padding(10, 14).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Gap(8).Padding(10, 14).AlignItems(ui.Center).Children(func() {
 		// 品牌标识：橙色圆角块 + 名称。
 		ui.Box(c).Width(26).Height(26).Radius(7).Background(brandOrange).Center().Children(func() {
 			ui.Text(c, "R").FontSize(14).Bold().TextColor(ui.RGB(255, 255, 255))
@@ -325,7 +388,9 @@ func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
 			ui.Badge(c, "未保存").TextColor(t.TextMuted)
 		}
 		ui.Spacer(c)
-		// 操作按钮：新建/打开/保存（图标）+ 导入。
+
+		// ── 文件组：新建 / 打开 / 保存 ──
+		ui.Text(c, "文件").FontSize(9).TextColor(t.TextMuted)
 		if iconButton(c, t, "new", iconNew, "新建场景", 28, t.Text).Clicked() {
 			a.newScenario()
 		}
@@ -336,32 +401,49 @@ func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
 			a.saveScenario()
 		}
 		ui.Divider(c).Height(20)
-		if ui.Button(c, "⇥ 导入 cURL").Clicked() {
+
+		// ── 数据组：导入 cURL / 数据驱动 ──
+		ui.Text(c, "数据").FontSize(9).TextColor(t.TextMuted)
+		if ui.Button(c, "⇥ 导入 cURL").Tooltip("从 Chrome DevTools 复制的 cURL 解析成请求步骤").Clicked() {
 			a.showImport = true
 			a.showHistory = false
 			a.importMsg = ""
 			a.mainTab = 0
 		}
-		if ui.Button(c, "🕘 历史").Tooltip("查看请求历史").Clicked() {
-			a.openHistory()
-		}
-		ui.Divider(c).Height(20)
 		if ui.Button(c, "⊞ 数据驱动").Tooltip("用 CSV/JSON 数据逐行运行场景").Clicked() {
 			a.pickDataFile()
 		}
-		if ui.Button(c, "⤓ 报告").Tooltip("导出测试报告 (HTML)").Disabled(a.lastResult == nil && len(a.dataResults) == 0).Clicked() {
-			a.exportReport()
-		}
-		if ui.Button(c, "ⓘ").Tooltip("关于 RequestFlow " + version.Short()).Clicked() {
-			a.showAbout()
-		}
 		ui.Divider(c).Height(20)
+
+		// ── 运行组：停止 / 运行 ──
+		ui.Text(c, "运行").FontSize(9).TextColor(t.TextMuted)
 		if ui.Button(c, "■").Tooltip("停止运行").Disabled(!a.running).Clicked() {
 			a.stop()
 		}
 		if ui.PrimaryButton(c, "▶ 运行").Disabled(a.running).Clicked() {
 			a.run()
 		}
+		ui.Divider(c).Height(20)
+
+		// ── 溢出菜单：次要功能（历史 / 报告 / 导入 API / 关于） ──
+		ui.PopoverMenuButton(c, "⋯ 更多", func(m *ui.Menu) {
+			if m.Item("🕘 请求历史").Chosen() {
+				a.openHistory()
+			}
+			if m.Item("⤓ 导出测试报告").Disabled(a.lastResult == nil && len(a.dataResults) == 0).Chosen() {
+				a.exportReport()
+			}
+			m.Separator()
+			if m.Item("⇩ 导入 Postman / OpenAPI").Chosen() {
+				a.showImport = true
+				a.showHistory = false
+				a.importMsg = ""
+				a.mainTab = 0
+			}
+			if m.Item("ⓘ 关于 RequestFlow " + version.Short()).Chosen() {
+				a.showAbout()
+			}
+		})
 	})
 }
 
@@ -1553,7 +1635,7 @@ func (a *App) editorExtract(c *ui.Context, t *ui.Theme, step *model.Step) {
 			step.Extract = append(step.Extract, model.Extract{Source: "body", Kind: "jsonpath"})
 		}
 	})
-	fieldHint(c, t, "从响应取值存入变量：来源选 body/header/cookie；方式 jsonpath 填 data.token，regex 填正则表达式。")
+	fieldHint(c, t, "从响应取值存入变量：来源选 body/header/cookie；jsonpath 填 data.token，regex 填正则表达式；css 用 HTML 选择器（如 li.item a），多元素自动提取为数组，可指定取 text/html/attr。")
 	for i := range step.Extract {
 		ex := &step.Extract[i]
 		idx := i
@@ -1568,11 +1650,27 @@ func (a *App) editorExtract(c *ui.Context, t *ui.Theme, step *model.Step) {
 			ui.Row(c).Gap(8).Children(func() {
 				sources := []string{"body", "header", "cookie", "status"}
 				ui.Select(c, &ex.Source, sources).Label("来源").Grow(1)
-				kinds := []string{"jsonpath", "regex", "whole"}
+				kinds := []string{"jsonpath", "regex", "whole", "css"}
 				ui.Select(c, &ex.Kind, kinds).Label("方式").Grow(1)
 				ui.TextInput(c, &ex.Default).Placeholder("可选").Label("默认值").Grow(1)
 			})
-			ui.TextInput(c, &ex.Path).Placeholder("data.token 或正则").Label("路径 / 表达式")
+			placeholder := "data.token 或正则"
+			if strings.EqualFold(strings.TrimSpace(ex.Kind), "css") {
+				placeholder = "CSS 选择器，如 li.item a.title"
+			}
+			ui.TextInput(c, &ex.Path).Placeholder(placeholder).Label("路径 / 表达式")
+			if strings.EqualFold(strings.TrimSpace(ex.Kind), "css") {
+				ui.Row(c).Gap(8).Children(func() {
+					fields := []string{"text", "html", "attr"}
+					if strings.TrimSpace(ex.CssField) == "" {
+						ex.CssField = "text"
+					}
+					ui.Select(c, &ex.CssField, fields).Label("取值").Grow(1)
+					if strings.EqualFold(strings.TrimSpace(ex.CssField), "attr") {
+						ui.TextInput(c, &ex.CssAttr).Placeholder("href / content / ...").Label("属性名").Grow(2)
+					}
+				})
+			}
 		})
 	}
 }
@@ -1976,6 +2074,16 @@ func (a *App) editorLoop(c *ui.Context, t *ui.Theme, step *model.Step) {
 	})
 	fieldHint(c, t, "翻页时在 URL 用 {{页码变量}}（默认 page）；最大轮数用于兜底防止死循环。")
 
+	// 累积去重（P1）：循环结束后对累积数组按字段去重并提示重复数。
+	ui.Divider(c)
+	ui.Text(c, "累积去重（可选）").FontSize(11).Bold()
+	ui.Row(c).Gap(8).Children(func() {
+		ui.TextInput(c, &lp.DedupVar).Placeholder("allRows").Label("去重数组变量").Grow(1)
+		ui.TextInput(c, &lp.DedupField).Placeholder("link").Label("去重字段").Grow(1)
+		ui.TextInput(c, &lp.DedupStat).Placeholder("dupCount").Label("重复数变量").Grow(1)
+	})
+	fieldHint(c, t, "循环结束后对「去重数组变量」按「去重字段」去重（字段为空按整行），去掉的重复数写入日志；填了「重复数变量」也会写入该变量。留空去重数组变量则不启用。")
+
 	ui.Divider(c)
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, fmt.Sprintf("循环体（%d 个子步骤）", len(step.Children))).FontSize(12).Bold()
@@ -2223,30 +2331,180 @@ func (a *App) resultView(c *ui.Context, t *ui.Theme) {
 	})
 }
 
-func (a *App) variablesView(c *ui.Context, t *ui.Theme) {
-	ui.Scroll(c).Grow(1).Padding(0, 12, 8, 12).Gap(4).Children(func() {
-		if a.lastResult == nil {
-			ui.Text(c, "运行后在此查看全部变量（含步骤间传递的数据）").FontSize(11).TextColor(t.TextMuted)
-			return
+// variableKind 返回变量的展示类型与元素/字段数量，供变量预览表格显示。
+func variableKind(v interface{}) (string, int) {
+	switch x := v.(type) {
+	case []interface{}:
+		return "数组", len(x)
+	case []string:
+		return "数组", len(x)
+	case []map[string]interface{}:
+		return "数组", len(x)
+	case map[string]interface{}:
+		return "对象", len(x)
+	case map[string]string:
+		return "对象", len(x)
+	case string:
+		var parsed interface{}
+		t := strings.TrimSpace(x)
+		if len(t) > 0 && (t[0] == '[' || t[0] == '{') && json.Unmarshal([]byte(t), &parsed) == nil {
+			return variableKind(parsed)
 		}
-		keys := make([]string, 0, len(a.lastResult.Vars))
-		for k := range a.lastResult.Vars {
+		return "文本", 0
+	case nil:
+		return "空", 0
+	default:
+		return "标量", 0
+	}
+}
+
+// variableCell 把单个变量值渲染为可复制展示文本；数组/对象返回简短摘要。
+func variableCell(v interface{}) string {
+	b, err := json.Marshal(v)
+	if err == nil && len(b) > 0 && b[0] == '"' {
+		return string(b[1 : len(b)-1])
+	}
+	s := string(b)
+	if len(s) > 160 {
+		return s[:160] + "…"
+	}
+	return s
+}
+
+// variableElements 把数组/对象展开为 (键, 值) 列表，供变量预览展开区展示。
+func variableElements(v interface{}) [][2]string {
+	list, ok := toAnySlice(v)
+	if ok {
+		out := make([][2]string, 0, len(list))
+		for i, item := range list {
+			out = append(out, [2]string{fmt.Sprintf("[%d]", i), variableCell(item)})
+		}
+		return out
+	}
+	if m, ok := toAnyMap(v); ok {
+		keys := make([]string, 0, len(m))
+		for k := range m {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
+		out := make([][2]string, 0, len(keys))
+		for _, k := range keys {
+			out = append(out, [2]string{k, variableCell(m[k])})
+		}
+		return out
+	}
+	return nil
+}
+
+func toAnySlice(v interface{}) ([]interface{}, bool) {
+	switch x := v.(type) {
+	case []interface{}:
+		return x, true
+	case []string:
+		out := make([]interface{}, 0, len(x))
+		for _, s := range x {
+			out = append(out, s)
+		}
+		return out, true
+	case []map[string]interface{}:
+		out := make([]interface{}, 0, len(x))
+		for _, m := range x {
+			out = append(out, m)
+		}
+		return out, true
+	case string:
+		var parsed interface{}
+		t := strings.TrimSpace(x)
+		if len(t) > 0 && t[0] == '[' && json.Unmarshal([]byte(t), &parsed) == nil {
+			if list, ok := parsed.([]interface{}); ok {
+				return list, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func toAnyMap(v interface{}) (map[string]interface{}, bool) {
+	switch x := v.(type) {
+	case map[string]interface{}:
+		return x, true
+	case map[string]string:
+		out := make(map[string]interface{}, len(x))
+		for k, val := range x {
+			out[k] = val
+		}
+		return out, true
+	case string:
+		var parsed interface{}
+		t := strings.TrimSpace(x)
+		if len(t) > 0 && t[0] == '{' && json.Unmarshal([]byte(t), &parsed) == nil {
+			if m, ok := parsed.(map[string]interface{}); ok {
+				return m, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func (a *App) variablesView(c *ui.Context, t *ui.Theme) {
+	if a.lastResult == nil {
+		ui.Scroll(c).Grow(1).Padding(0, 12, 8, 12).Children(func() {
+			ui.Text(c, "运行后在此查看全部变量（含步骤间传递的数据）").FontSize(11).TextColor(t.TextMuted)
+		})
+		return
+	}
+	keys := make([]string, 0, len(a.lastResult.Vars))
+	for k := range a.lastResult.Vars {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	ui.Scroll(c).Grow(1).Padding(0, 12, 8, 12).Gap(2).Children(func() {
+		// 表头
+		ui.Row(c).Gap(8).Padding(2, 6).Children(func() {
+			ui.Text(c, "变量名").FontSize(10).Bold().TextColor(t.TextMuted).Width(180)
+			ui.Text(c, "类型/数量").FontSize(10).Bold().TextColor(t.TextMuted).Width(90)
+			ui.Text(c, "值").FontSize(10).Bold().TextColor(t.TextMuted).Grow(1)
+		})
+		ui.Divider(c)
 		for _, k := range keys {
 			v := a.lastResult.Vars[k]
-			val := fmt.Sprint(v)
-			if b, err := json.Marshal(v); err == nil && len(b) > 0 && b[0] == '"' {
-				val = string(b[1 : len(b)-1])
+			kind, n := variableKind(v)
+			cell := variableCell(v)
+			elements := variableElements(v)
+			if len(elements) == 0 || len(elements) == 1 && kind == "文本" {
+				// 标量：一行展示完整值
+				ui.Row(c.Key(k)).Gap(8).Padding(2, 6).Children(func() {
+					ui.Text(c, k).FontSize(11).Bold().Width(180)
+					ui.Text(c, kind).FontSize(10).TextColor(t.TextMuted).Width(90)
+					ui.Text(c, cell).FontSize(11).TextColor(t.TextMuted).Grow(1)
+				})
+				continue
 			}
-			if engine.IsTabular(v) && len(val) > 80 {
-				val = val[:80] + "…"
+			// 数组/对象：点击变量名展开/收起，展开区逐元素成表
+			key := k
+			open := a.varExpanded[k]
+			arrow := "▸ "
+			if open {
+				arrow = "▾ "
 			}
-			ui.Row(c.Key(k)).Gap(8).Padding(2, 0).Children(func() {
-				ui.Text(c, k).FontSize(11).Bold().Width(140)
-				ui.Text(c, val).FontSize(11).TextColor(t.TextMuted).SingleLine().Grow(1)
+			ui.Row(c.Key(k)).Gap(8).Padding(2, 6).Children(func() {
+				if ui.Button(c, arrow+key).Width(180).Clicked() {
+					a.varExpanded[key] = !open
+				}
+				ui.Text(c, fmt.Sprintf("%s · %d", kind, n)).FontSize(10).TextColor(t.Accent).Width(90)
+				ui.Text(c, cell).FontSize(11).TextColor(t.TextMuted).Grow(1).SingleLine()
 			})
+			if open {
+				ui.Column(c.Key(k+"-items")).Padding(0, 0, 4, 28).Gap(1).Children(func() {
+					for _, el := range elements {
+						ui.Row(c).Gap(8).Padding(1, 4).Children(func() {
+							ui.Text(c, el[0]).FontSize(10).TextColor(t.Accent).Width(120)
+							ui.Text(c, el[1]).FontSize(10).SingleLine().Grow(1)
+						})
+					}
+				})
+			}
 		}
 	})
 }
@@ -2390,12 +2648,22 @@ func (a *App) deleteStep(i int) {
 	}
 }
 
+// newScenario 打开模板向导，让用户从模板或空白场景开始，降低手写 JSON 门槛。
 func (a *App) newScenario() {
-	a.scenario = model.NewScenario("新场景")
+	a.showTemplateWizard = true
+	a.templateIndex = 0
+}
+
+// applyTemplate 载入选中的场景模板并关闭向导。
+func (a *App) applyTemplate(tpl ScenarioTemplate) {
+	a.scenario = tpl.Build()
 	a.filePath = ""
 	a.selectedStep = -1
+	a.mainTab = 0
+	a.adding = false
 	a.resetResult()
-	a.log("已新建场景")
+	a.showTemplateWizard = false
+	a.log("已从模板新建场景：" + tpl.Name)
 }
 
 // resetResult 清空上一次运行的可视化结果状态。

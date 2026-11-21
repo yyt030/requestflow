@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -90,11 +91,39 @@ func jsonModule() starlark.Value {
 // 但缺 sum/any/all/abs/round 等，这里补齐常用部分。
 func pyBuiltins() starlark.StringDict {
 	return starlark.StringDict{
-		"sum":   starlark.NewBuiltin("sum", pySum),
-		"abs":   starlark.NewBuiltin("abs", pyAbs),
-		"any":   starlark.NewBuiltin("any", pyAnyAll(false)),
-		"all":   starlark.NewBuiltin("all", pyAnyAll(true)),
+		"sum":  starlark.NewBuiltin("sum", pySum),
+		"abs":  starlark.NewBuiltin("abs", pyAbs),
+		"any":  starlark.NewBuiltin("any", pyAnyAll(false)),
+		"all":  starlark.NewBuiltin("all", pyAnyAll(true)),
+		"atob": starlark.NewBuiltin("atob", pyAtob),
+		"btoa": starlark.NewBuiltin("btoa", pyBtoa),
 	}
+}
+
+func pyAtob(t *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kv []starlark.Tuple) (starlark.Value, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("atob() 缺少参数")
+	}
+	s, ok := starlark.AsString(args[0])
+	if !ok {
+		return nil, fmt.Errorf("atob() 需要字符串")
+	}
+	decoded, err := decodeBase64Flexible(s)
+	if err != nil {
+		return nil, err
+	}
+	return starlark.String(decoded), nil
+}
+
+func pyBtoa(t *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kv []starlark.Tuple) (starlark.Value, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("btoa() 缺少参数")
+	}
+	s, ok := starlark.AsString(args[0])
+	if !ok {
+		return nil, fmt.Errorf("btoa() 需要字符串")
+	}
+	return starlark.String(base64.StdEncoding.EncodeToString([]byte(s))), nil
 }
 
 func pySum(t *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kv []starlark.Tuple) (starlark.Value, error) {

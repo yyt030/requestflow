@@ -114,15 +114,48 @@ func runProcess(ctx *Context, step model.Step) error {
 		ctx.Set(out, t.Format(layout))
 		return nil
 
+	case "dedup": // 数组去重：args[from], args[field]（可选）, args[to], args[stat]（可选）
+		return processDedup(ctx, args)
+
 	case "base64encode":
-		ctx.Set(get("to"), base64.StdEncoding.EncodeToString([]byte(get("from"))))
+		outName := get("to")
+		if outName == "" {
+			outName = "encoded"
+		}
+		v := ctx.resolveArg(args["from"])
+		if list, ok := rawSlice(v); ok {
+			out := make([]interface{}, 0, len(list))
+			for _, it := range list {
+				out = append(out, base64.StdEncoding.EncodeToString([]byte(toStr(it))))
+			}
+			ctx.Set(outName, out)
+		} else {
+			ctx.Set(outName, base64.StdEncoding.EncodeToString([]byte(toStr(v))))
+		}
 		return nil
 	case "base64decode":
-		b, err := base64.StdEncoding.DecodeString(get("from"))
-		if err != nil {
-			return err
+		outName := get("to")
+		if outName == "" {
+			outName = "decoded"
 		}
-		ctx.Set(get("to"), string(b))
+		v := ctx.resolveArg(args["from"])
+		if list, ok := rawSlice(v); ok {
+			out := make([]interface{}, 0, len(list))
+			for _, it := range list {
+				s, err := decodeBase64Flexible(it)
+				if err != nil {
+					return err
+				}
+				out = append(out, s)
+			}
+			ctx.Set(outName, out)
+		} else {
+			s, err := decodeBase64Flexible(v)
+			if err != nil {
+				return err
+			}
+			ctx.Set(outName, s)
+		}
 		return nil
 	case "urlencode":
 		ctx.Set(get("to"), url.QueryEscape(get("from")))
@@ -143,6 +176,120 @@ func runProcess(ctx *Context, step model.Step) error {
 		return nil
 	}
 	return fmt.Errorf("未知的内置处理 op: %q", step.Op)
+}
+
+// processDedup 数组去重：按 field（可选）或整个元素去重，保持原顺序。
+// args: from=源数组变量, field=可选去重字段（对象数组按此字段值去重）,
+// to=目标变量（默认 deduped）, stat=可选，写入被去掉的重复数量变量名。
+func processDedup(ctx *Context, args map[string]string) error {
+	get := func(k string) string { return ctx.Render(args[k]) }
+	list, ok := toSlice(ctx.resolveArg(args["from"]))
+	if !ok {
+		return fmt.Errorf("dedup: %s 不是数组", get("from"))
+	}
+	field := get("field")
+	out := get("to")
+	if out == "" {
+		out = "deduped"
+	}
+	deduped, removed := dedupByField(list, field)
+	ctx.Set(out, deduped)
+	if stat := get("stat"); stat != "" {
+		ctx.Set(stat, removed)
+	}
+	return nil
+}
+
+// dedupByField 保持顺序去重；field 为空时用元素文本作为键，否则用元素该字段的值。
+// 返回去重后的数组与被去掉的重复元素数量。
+func dedupByField(list []interface{}, field string) ([]interface{}, int) {
+	seen := make(map[string]struct{}, len(list))
+	out := make([]interface{}, 0, len(list))
+	removed := 0
+	for _, item := range list {
+		v := item
+		if field != "" {
+			v = fieldValue(item, field)
+		}
+		key := dedupKey(v)
+		if _, exists := seen[key]; exists {
+			removed++
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, item)
+	}
+	return out, removed
+}
+
+// dedupKey 把任意值转成稳定的去重键。map/切片用 JSON 序列化保证字段顺序稳定。
+func dedupKey(v interface{}) string {
+	switch x := v.(type) {
+	case nil:
+		return "<nil>"
+	case string:
+		return "s:" + x
+	case map[string]interface{}, []interface{}:
+		b, err := json.Marshal(x)
+		if err == nil {
+			return "j:" + string(b)
+		}
+	}
+	return fmt.Sprintf("%T:%v", v, v)
+}
+
+// decodeBase64Flexible 宽容解码 Base64：依次尝试标准（带 padding）、标准无 padding、
+// URL-safe（带/无 padding）。兼容 Bing 跳转链接等无 padding 的 base64url 场景。
+func decodeBase64Flexible(v interface{}) (string, error) {
+	s := strings.TrimSpace(toStr(v))
+	if s == "" {
+		return "", nil
+	}
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	}
+	var lastErr error
+	for _, enc := range encodings {
+		if b, err := enc.DecodeString(s); err == nil {
+			return string(b), nil
+		} else {
+			lastErr = err
+		}
+	}
+	return "", lastErr
+}
+
+// rawSlice 把「本身就是数组」的值转为 []interface{}；标量与普通字符串返回 false。
+// 与 toSlice 不同：不会把标量或 JSON 字符串包装成单元素数组，用于区分「数组输入」与「标量输入」。
+func rawSlice(v interface{}) ([]interface{}, bool) {
+	switch x := v.(type) {
+	case []interface{}:
+		return x, true
+	case []string:
+		out := make([]interface{}, 0, len(x))
+		for _, s := range x {
+			out = append(out, s)
+		}
+		return out, true
+	case []map[string]interface{}:
+		out := make([]interface{}, 0, len(x))
+		for _, m := range x {
+			out = append(out, m)
+		}
+		return out, true
+	case string:
+		// 变量里常存的是 JSON 数组字符串（如 set 的结果），也视为数组输入。
+		var parsed interface{}
+		if json.Unmarshal([]byte(strings.TrimSpace(x)), &parsed) == nil {
+			if list, ok := parsed.([]interface{}); ok {
+				return list, true
+			}
+		}
+	}
+	return nil, false
 }
 
 func processFilter(ctx *Context, args map[string]string) error {
@@ -267,6 +414,12 @@ func runScript(ctx *Context, step model.Step, last *model.Response) error {
 			parts = append(parts, toStr(a))
 		}
 		fmt.Println("[script]", strings.Join(parts, " "))
+	})
+	vm.Set("atob", func(s string) (string, error) {
+		return decodeBase64Flexible(s)
+	})
+	vm.Set("btoa", func(s string) string {
+		return base64.StdEncoding.EncodeToString([]byte(s))
 	})
 	vm.Set("JSON", map[string]interface{}{
 		"stringify": func(v interface{}) string {

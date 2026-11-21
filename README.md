@@ -11,6 +11,11 @@
 - **请求级 Pre/Post 脚本（Postman 风格）**：request 步骤可配 `Pre-request Script`（请求发送前执行，改写变量以影响本次 URL/头/体）与 `Tests`（响应提取/断言后执行，`last` 访问响应），支持 JS / Python 双引擎，与独立 script 步骤共用语法。
 - **Postman 风格布局**：顶栏品牌 + 场景 + 操作分组；左侧 Collection 导航树（可搜索）；右侧主工作区用 **步骤编排 / 接口调试 / 运行结果** 三个标签切换；底部状态栏。执行结果采用 **日志 / 结果表 / 变量** 三视图。结果表用原生表格展示提取的数组数据（可选数据源、列排序、刷新）；变量视图列出全部运行时变量。
 - **可配置顺序步骤**：`request / tcp / branch / switch / loop / parallel / merge / process / script / assert / export` 十一种步骤自由编排。
+- **CSS 选择器提取（HTML 抓取）**：extract 支持 `kind:css`，用 CSS 选择器从 HTML 响应提取，**多元素自动合并为数组**，可取文本 / 内部 HTML / 属性值（`text`/`html`/`attr`），自动解码实体与收敛空白。配合 `loop` 翻页 + `process` 累积 + `export`，无需写 JS 即可抓取网页列表（如豆瓣 Top100 片名/导演/评分）。纯 Go 实现，无 cgo。
+- **数组去重与 Base64 编解码**：内置处理新增 `dedup`（数组按整行或按 `field` 字段去重，可选 `stat` 写入重复数）、`base64decode` / `base64encode` **支持数组逐项处理**，解码兼容标准 / URL-safe / 无 padding（可直接解 Bing 跳转链接）。JS（goja）与 Python（Starlark）脚本引擎均注入 Web 标准 `atob` / `btoa`，处理跳转链接无需手写解码函数。
+- **变量预览表格**：运行结果「变量」视图按 **变量名 / 类型·数量 / 值** 三列展示，**数组与对象可点击展开逐元素查看**，标量显示完整值（不再截断到 80 字符）。
+- **循环累积去重**：`loop` 可配 `dedupVar` + `dedupField`，循环结束后对累积数组按字段去重并在日志提示去掉的重复数（`dedupStat` 可写入该计数变量），多源/多页采集去重无需写脚本。
+- **工具栏分组 + 场景模板向导**：顶栏按 **文件｜数据｜运行** 语义分组，次要功能（历史/报告/导入 API/关于）收进「⋯ 更多」溢出菜单；点「新建」弹出**模板向导**，内置空白 / 登录取 Token / 翻页采集去重导出 / TCP 长连接帧 / 搜索采集解码去重等模板，一键载入，降低手写 JSON 门槛。
 - **TCP Socket 步骤**：填写主机/端口即可建立 TCP 连接（可选 TLS），发送数据支持变量与 `\n`/`\xNN` 转义、四种发送模式（line 补换行 / raw 原样 / hex 十六进制 / **frame 长度头**）；读取支持五种模式（line 读一行 / all 读到关闭或超时 / fixed 定长 / until 读到结束标记 / **frame 长度头**）。响应以文本形式供 jsonpath/regex 提取与断言，可与 HTTP 步骤互相传递变量，实现「HTTP 登录取凭证 → TCP 协议校验」这类跨协议流程。
 - **TCP 长连接 + 长度头帧协议**：`tcpConnMode=short`（默认，每步独立连接、发完即关）或 `long`（按 `tcpConnKey` 连接名**跨步骤复用同一 socket**，服务端会话状态得以保持，场景结束自动关闭，也可用 `tcpClose=true` 步骤显式关闭）。`tcpFrameHead` 配置帧头位数（如 8），配合发送/读取模式的 `frame`：发送时自动加 N 位十进制长度头（左补零），如 8 字节报文 `88888888` → `0000000888888888`；读取时先解析长度头再读定长报文。典型用法：步骤1 `LOGIN`、步骤2 `QUERY` 共用同一长连接名，用帧协议收发。
 - **条件分支（可视化配置）**：`branch` 步骤按条件走不同分支——**变量 + 操作符（大于/小于/等于/包含/为空…）+ 值** 下拉拼装，支持 and/or 组合与嵌套；条件成立执行 then、否则执行 else，各分支内可放请求/脚本/处理子步骤。也可切换高级模式直接写 `{{amount}} > 0` 表达式。
@@ -296,6 +301,12 @@ requestflow -run scene.json -data users.csv -report result.html
 
 `pageVar` / `pageStart` / `pageStep` 让页码变量每轮自动递增，`max` 防止死循环（默认 100）。
 
+**累积去重**：三种模式都可在循环结束后对累积数组去重——`dedupVar`（数组变量名，如 `allRows`）、`dedupField`（可选，对象数组按此字段如 `link` 去重，留空按整行）、`dedupStat`（可选，写入去掉的重复数变量名）。去重结果写回同名变量，并在日志提示 `N 行 → M 行，去掉 K 条重复`。例：
+
+```json
+{"type":"loop","loop":{"mode":"until","breakWhen":"{{len(items)}} == 0","dedupVar":"allRows","dedupField":"link","dedupStat":"dupCount"},"children":[...]}
+```
+
 ### TCP Socket 步骤（tcp）
 
 | 字段 | 说明 |
@@ -354,8 +365,28 @@ JSON 示例（长连接 + 2 字节二进制帧头，两步复用同一 socket）
 
 ### 提取器（extract）
 
-`source`：`body`（默认）/ `header` / `cookie` / `status`；`kind`：`jsonpath` / `regex` / `whole`。
+`source`：`body`（默认）/ `header` / `cookie` / `status`；`kind`：`jsonpath` / `regex` / `whole` / `css`。
 例如 `{"name":"token","kind":"jsonpath","path":"data.token"}`、`{"name":"id","kind":"regex","path":"id=(\\d+)","group":1}`。
+
+**CSS 选择器提取（HTML 页面）**：`kind:css` 用 CSS 选择器从 HTML 响应提取，**多元素自动合并为数组**，基于 `x/net/html`（纯 Go、无 cgo），自动解码 HTML 实体（`&nbsp;` / `&amp;`）并收敛空白。
+
+| 字段 | 说明 |
+|---|---|
+| `path` | CSS 选择器，如 `div.item .title` / `a.link`，支持 `:first-child` 等伪类 |
+| `cssField` | `text`（默认，元素文本）/ `html`（内部 HTML）/ `attr`（属性值） |
+| `cssAttr` | `cssField=attr` 时的属性名，如 `href` / `src` / `content` |
+
+示例（抓取豆瓣 Top250 每页的片名、评分、海报链接）：
+
+```json
+"extract": [
+  { "name": "names",   "kind": "css", "path": "div.item .hd .title:first-child", "cssField": "text" },
+  { "name": "ratings", "kind": "css", "path": "div.item .rating_num",            "cssField": "text" },
+  { "name": "posters", "kind": "css", "path": "div.item .pic img",               "cssField": "attr", "cssAttr": "src" }
+]
+```
+
+无匹配元素返回 `null`（可用 `default` 兜底）；`kind:css` 与 `jsonpath`/`regex` 可混用。完整案例见 `verify/douban_top100_css_scenario.json`（loop 翻 4 页 → CSS 提取 → JS 组装 → 导出 100 条，与 JS 正则版逐条比对 0 差异）。
 
 ### 断言（assert）
 
@@ -385,7 +416,13 @@ JSON 示例（长连接 + 2 字节二进制帧头，两步复用同一 socket）
 | `pick` | 取指定字段 | `from` `fields=a,b,c` `to` |
 | `flatten` | 合并多个数组变量 | `from=a,b` `to` |
 | `format_time` | 时间戳格式化 | `from` `in=unix/unixms` `layout` `to` |
-| `join` `base64encode` `base64decode` `urlencode` `urldecode` | 字符串/编解码工具 | 见 UI 提示 |
+| `dedup` | 数组去重（保序），`field` 为空按整行去重 | `from` `field` `to=deduped` `stat`（可选，写入重复数） |
+| `join` | 拼接字符串 | `values=a,b,c` `sep` `to` |
+| `base64encode` `base64decode` | Base64 编解码，**支持数组逐项处理**；解码兼容标准/URL-safe/无 padding | `from` `to` |
+| `urlencode` `urldecode` | URL 编解码 | `from` `to` |
+
+> `dedup` 示例：`{"op":"dedup","args":{"from":"links","field":"link","to":"uniq","stat":"dupCount"}}`
+> `base64decode` 对数组变量逐项解码返回数组；对标量返回字符串。Bing 跳转链接（`u=a1<base64url>`）先用脚本去掉 `a1` 前缀即可用 `atob` 或此 op 解码。
 
 ## 自定义脚本（script）
 
@@ -395,6 +432,7 @@ JSON 示例（长连接 + 2 字节二进制帧头，两步复用同一 socket）
 - `last`：最近一次响应 `{ status, body, json, headers }`
 - `log(...)`：输出到控制台
 - `JSON.stringify` / `JSON.parse`：JSON 编解码
+- `atob(s)` / `btoa(s)`：Base64 解码/编码（Web 标准，兼容 URL-safe 与无 padding）；处理网站跳转链接无需手写解码函数
 
 ### JavaScript（goja，纯 Go 引擎）
 

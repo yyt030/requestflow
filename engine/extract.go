@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/tidwall/gjson"
 
 	"requestflow/model"
@@ -69,6 +70,8 @@ func extractOne(ctx *Context, resp *model.Response, ex model.Extract) (interface
 				idx = 0
 			}
 			return m[idx], nil
+		case "css":
+			return extractCSS(ctx.Render(ex.Path), resp.Text, ex.CssField, ex.CssAttr)
 		default: // jsonpath
 			path := ctx.Render(ex.Path)
 			if path == "" {
@@ -84,6 +87,65 @@ func extractOne(ctx *Context, resp *model.Response, ex model.Extract) (interface
 			return jsonValue(r), nil
 		}
 	}
+}
+
+// extractCSS 用 CSS 选择器从 HTML 提取。多元素统一返回 []interface{}，无匹配返回 nil。
+// field：text（默认，元素文本）/ html（内部 HTML）/ attr（属性值，由 attrName 指定）。
+// goquery 基于 x/net/html，会自动解码 HTML 实体（如 &nbsp;、&amp;）。
+func extractCSS(selector, html, field, attrName string) (interface{}, error) {
+	if strings.TrimSpace(selector) == "" {
+		return nil, fmt.Errorf("CSS 提取需要提供选择器")
+	}
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		return nil, fmt.Errorf("CSS 提取解析 HTML 失败: %w", err)
+	}
+	field = strings.ToLower(strings.TrimSpace(field))
+	if field == "" {
+		field = "text"
+	}
+	out := make([]interface{}, 0)
+	var matchErr error
+	doc.Find(selector).EachWithBreak(func(_ int, s *goquery.Selection) bool {
+		var val string
+		switch field {
+		case "html":
+			val, matchErr = s.Html()
+		case "attr":
+			if strings.TrimSpace(attrName) == "" {
+				matchErr = fmt.Errorf("CSS 提取 field=attr 时需填写属性名 cssAttr")
+				return false
+			}
+			v, ok := s.Attr(attrName)
+			if !ok {
+				return true // 该元素无此属性，跳过
+			}
+			val = v
+		default: // text
+			val = s.Text()
+		}
+		if matchErr != nil {
+			return false
+		}
+		val = cleanCSSValue(val)
+		if val == "" {
+			return true // 跳过空值，避免空元素污染数组
+		}
+		out = append(out, val)
+		return true
+	})
+	if matchErr != nil {
+		return nil, matchErr
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+// cleanCSSValue 收敛空白：合并连续空白（含 &nbsp; 解码后的 \u00a0）并去除首尾空白。
+func cleanCSSValue(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 func jsonValue(r gjson.Result) interface{} {

@@ -178,10 +178,14 @@ type FormField struct {
 type Extract struct {
 	Name    string `json:"name"`             // 变量名
 	Source  string `json:"source,omitempty"` // body | header | cookie | status
-	Kind    string `json:"kind,omitempty"`   // jsonpath | regex | whole | header | cookie
-	Path    string `json:"path,omitempty"`   // jsonpath 表达式 / 正则 / header 名 / cookie 名
+	Kind    string `json:"kind,omitempty"`   // jsonpath | regex | whole | header | cookie | css
+	Path    string `json:"path,omitempty"`   // jsonpath 表达式 / 正则 / header 名 / cookie 名 / CSS 选择器
 	Group   int    `json:"group,omitempty"`  // 正则捕获组序号
 	Default string `json:"default,omitempty"`
+
+	// CSS 提取（kind=css）：多元素提取为数组。
+	CssField string `json:"cssField,omitempty"` // text（默认）| html（内部 HTML）| attr（属性值）
+	CssAttr  string `json:"cssAttr,omitempty"`  // cssField=attr 时的属性名，如 href / content
 }
 
 // Assert 对响应做断言，实现"类似自动化测试"。
@@ -208,6 +212,15 @@ type Loop struct {
 	PageStart int    `json:"pageStart,omitempty"`
 	PageStep  int    `json:"pageStep,omitempty"`
 	Max       int    `json:"max,omitempty"` // 最大轮数保护，默认 100
+
+	// 循环结束后的累积去重（P1 易用性）：对 DedupVar 指定的数组变量按 DedupField 去重。
+	//   - DedupVar   : 要被去重的累积数组变量名（如 allRows）；为空表示不启用去重。
+	//   - DedupField : 可选，对象数组按此字段值去重（如 link）；为空按整个元素去重。
+	// 去重后写回同名变量，并把被去掉的重复数量 emit 到日志提示；
+	// DedupStat 非空时另把重复数写入该变量，供后续步骤/断言引用。
+	DedupVar   string `json:"dedupVar,omitempty"`
+	DedupField string `json:"dedupField,omitempty"`
+	DedupStat  string `json:"dedupStat,omitempty"`
 }
 
 // Condition 单个条件：对变量值做比较（可视化配置用）。

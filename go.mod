@@ -3,6 +3,7 @@ module requestflow
 go 1.27.3
 
 require (
+	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/dop251/goja v0.0.0-20261110204830-f493a2b600d6
 	github.com/egoist/mygo v0.9.1
 	github.com/tidwall/gjson v1.20.3
@@ -11,6 +12,7 @@ require (
 )
 
 require (
+	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/dlclark/regexp2/v2 v2.11.0 // indirect
 	github.com/ebitengine/purego v0.11.1 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect

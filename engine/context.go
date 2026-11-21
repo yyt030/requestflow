@@ -78,6 +78,7 @@ func (c *Context) Snapshot() map[string]interface{} {
 }
 
 var tokenRE = regexp.MustCompile(`\{\{\s*([^{}]+?)\s*\}\}`)
+var varPathRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.]*$`)
 
 // Render 把字符串中的 {{expr}} 依次替换为求值结果。
 func (c *Context) Render(s string) string {
@@ -88,6 +89,32 @@ func (c *Context) Render(s string) string {
 		expr := strings.TrimSpace(m[2 : len(m)-2])
 		return toStr(c.Eval(expr))
 	})
+}
+
+// resolveArg 解析一个参数表达式，返回「原始值」（可能是数组/对象）：
+//   - {{var}} 形式 → 取变量原始值
+//   - 纯变量名/点路径（如 rows、data.list）→ 变量存在时取原始值
+//   - 其它文本（含 JSON 字面量、含 {{}} 的拼接串）→ 渲染为字符串
+//
+// 供 process 步骤区分「数组输入」与「文本输入」。
+func (c *Context) resolveArg(expr string) interface{} {
+	s := strings.TrimSpace(expr)
+	if s == "" {
+		return ""
+	}
+	if m := tokenRE.FindStringSubmatch(s); len(m) == 2 && strings.TrimSpace(s[2:len(s)-2]) == m[1] {
+		return c.Eval(m[1])
+	}
+	if varPathRE.MatchString(s) {
+		head := strings.SplitN(s, ".", 2)[0]
+		c.mu.RLock()
+		_, exists := c.vars[head]
+		c.mu.RUnlock()
+		if exists {
+			return c.Eval(s)
+		}
+	}
+	return c.Render(expr)
 }
 
 // RenderMap 渲染 map 的所有 key 与 value。

@@ -94,10 +94,10 @@ func TestTabularVarsSelection(t *testing.T) {
 	a := &App{}
 	a.lastResult = &engine.Result{
 		Vars: map[string]interface{}{
-			"token":  "abc",                       // 标量，不展示
-			"page":   3,                           // 标量，不展示
-			"rows":   []interface{}{map[string]interface{}{"id": 1}}, // 数组，展示
-			"rawJSON": `["x","y"]`,                // JSON 数组字符串，展示
+			"token":   "abc",                                          // 标量，不展示
+			"page":    3,                                              // 标量，不展示
+			"rows":    []interface{}{map[string]interface{}{"id": 1}}, // 数组，展示
+			"rawJSON": `["x","y"]`,                                    // JSON 数组字符串，展示
 		},
 	}
 	names := a.tabularVars()
@@ -160,5 +160,37 @@ func TestBuildTableForPreview(t *testing.T) {
 	}
 	if rows[0][1] != "Ada" {
 		t.Fatalf("单元格值错误: %s", rows[0][1])
+	}
+}
+
+// 验证变量预览的类型分类与展开：数组/对象可展开为逐元素表，标量不展开。
+func TestVariablePreviewHelpers(t *testing.T) {
+	kind, n := variableKind([]interface{}{"a", "b", "c"})
+	if kind != "数组" || n != 3 {
+		t.Fatalf("数组分类错误: %s %d", kind, n)
+	}
+	kind, n = variableKind(map[string]interface{}{"a": 1, "b": 2})
+	if kind != "对象" || n != 2 {
+		t.Fatalf("对象分类错误: %s %d", kind, n)
+	}
+	kind, _ = variableKind("hello")
+	if kind != "文本" {
+		t.Fatalf("文本分类错误: %s", kind)
+	}
+
+	els := variableElements([]interface{}{"x", "y"})
+	if len(els) != 2 || els[0][0] != "[0]" || els[0][1] != "x" {
+		t.Fatalf("数组展开错误: %v", els)
+	}
+	els = variableElements(map[string]interface{}{"k": "v"})
+	if len(els) != 1 || els[0][0] != "k" || els[0][1] != "v" {
+		t.Fatalf("对象展开错误: %v", els)
+	}
+	if els := variableElements("scalar"); len(els) != 0 {
+		t.Fatalf("标量不应展开: %v", els)
+	}
+	// 文本值经 JSON 渲染，换行被转义为 \n（便于单行展示与复制）。
+	if cell := variableCell("line1\nline2"); cell != `line1\nline2` {
+		t.Fatalf("文本值展示错误: %q", cell)
 	}
 }
