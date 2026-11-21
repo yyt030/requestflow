@@ -22,13 +22,13 @@ type Entry struct {
 	Error      string `json:"error,omitempty"`
 	Source     string `json:"source,omitempty"` // debug | run
 	// 完整请求快照，便于重新载入调试面板
-	Headers      map[string]string `json:"headers,omitempty"`
-	BodyType     string            `json:"bodyType,omitempty"`
-	Body         string            `json:"body,omitempty"`
+	Headers  map[string]string `json:"headers,omitempty"`
+	BodyType string            `json:"bodyType,omitempty"`
+	Body     string            `json:"body,omitempty"`
 }
 
 var (
-	mu       sync.Mutex
+	mu         sync.Mutex
 	customPath string // 测试可覆盖
 )
 

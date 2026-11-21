@@ -1,6 +1,6 @@
 //go:build !linux
 
-package main
+package cmd
 
 // prepareGUI 在非 Linux 平台无需图形环境预处理（Windows/macOS 由系统处理）。
 func prepareGUI(software bool) {}

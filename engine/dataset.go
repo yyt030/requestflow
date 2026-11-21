@@ -19,6 +19,7 @@ type DataRow map[string]string
 //   - JSON：支持两种形态：
 //     1) 对象数组  [ {"name":"张三","age":"18"}, ... ]
 //     2) 包裹对象  { "data": [ ... ] } 或 { "rows": [ ... ] }
+//
 // 非字符串值（数字/布尔）会被转为字符串。
 func LoadDataset(path string) ([]DataRow, error) {
 	data, err := os.ReadFile(path)
@@ -124,10 +125,10 @@ func dataValueString(v interface{}) string {
 
 // DatasetResult 一次数据迭代的结果。
 type DatasetResult struct {
-	Index    int                 // 从 1 开始
-	Data     DataRow             // 本行数据
-	Result   *Result             // 场景执行结果
-	Vars     map[string]interface{} // 本次迭代结束时的变量快照
+	Index  int                    // 从 1 开始
+	Data   DataRow                // 本行数据
+	Result *Result                // 场景执行结果
+	Vars   map[string]interface{} // 本次迭代结束时的变量快照
 }
 
 // IterationEvent 迭代过程中产生的事件，包装了迭代序号与原始 Event。

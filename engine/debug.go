@@ -2,9 +2,7 @@ package engine
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
@@ -16,36 +14,40 @@ import (
 
 // DebugRequest 一次接口调试请求的配置（变量可写成 {{name}}）。
 type DebugRequest struct {
-	Method      string
-	URL         string
-	Headers     map[string]string
-	Query       map[string]string
-	Body        string
-	BodyType    string // raw | form-data | urlencoded | binary | graphql | none
-	FormData    []model.FormField
+	Method           string
+	URL              string
+	Headers          map[string]string
+	Query            map[string]string
+	Body             string
+	BodyType         string // raw | form-data | urlencoded | binary | graphql | none
+	FormData         []model.FormField
 	GraphQLQuery     string
 	GraphQLVariables string
-	AuthType    string // none | bearer | basic | apikey | oauth2
-	AuthToken   string
-	AuthUser    string
-	AuthPass    string
-	AuthKeyName  string
-	AuthKeyValue string
-	AuthKeyIn    string
-	AuthTokenURL   string
-	AuthClientID   string
+	AuthType         string // none | bearer | basic | apikey | oauth2
+	AuthToken        string
+	AuthUser         string
+	AuthPass         string
+	AuthKeyName      string
+	AuthKeyValue     string
+	AuthKeyIn        string
+	AuthTokenURL     string
+	AuthClientID     string
 	AuthClientSecret string
-	AuthScope      string
-	AuthGrantType  string
-	TimeoutSec  int  // <=0 时默认 30 秒
-	InsecureTLS bool // 跳过 TLS 证书校验
+	AuthScope        string
+	AuthGrantType    string
+	TimeoutSec       int  // <=0 时默认 30 秒
+	InsecureTLS      bool // 跳过 TLS 证书校验
 }
+
+// KV 用于有序展示 header/cookie。
 
 // KV 用于有序展示 header/cookie。
 type KV struct {
 	Key   string
 	Value string
 }
+
+// DebugResult 调试请求的结果，含状态码、耗时、响应头、Cookie、格式化响应体与反向 cURL。
 
 // DebugResult 调试请求的结果，含状态码、耗时、响应头、Cookie、格式化响应体与反向 cURL。
 type DebugResult struct {
@@ -65,6 +67,8 @@ type DebugResult struct {
 	Curl       string
 	Snippets   map[string]string // 代码生成：python / go / javascript / curl
 }
+
+// Debug 执行一次调试请求。vars 用于 {{变量}} 渲染，通常传场景全局变量（含 baseUrl）。
 
 // Debug 执行一次调试请求。vars 用于 {{变量}} 渲染，通常传场景全局变量（含 baseUrl）。
 func Debug(req DebugRequest, vars map[string]string) *DebugResult {
@@ -159,6 +163,8 @@ func Debug(req DebugRequest, vars map[string]string) *DebugResult {
 }
 
 // DebugStep 从场景 request 步骤构造调试请求并复用 Debug，用于"试发送此请求"。
+
+// DebugStep 从场景 request 步骤构造调试请求并复用 Debug，用于"试发送此请求"。
 func DebugStep(step *model.Step, vars map[string]string) *DebugResult {
 	return Debug(DebugRequest{
 		Method:           step.Method,
@@ -186,6 +192,8 @@ func DebugStep(step *model.Step, vars map[string]string) *DebugResult {
 }
 
 // mergeQuery 把 query 合并进 URL，用于展示实际请求地址。
+
+// mergeQuery 把 query 合并进 URL，用于展示实际请求地址。
 func mergeQuery(rawURL string, query map[string]string) string {
 	if len(query) == 0 {
 		return rawURL
@@ -203,100 +211,10 @@ func mergeQuery(rawURL string, query map[string]string) string {
 }
 
 // shellQuote 用单引号包裹 shell 参数并转义内部的单引号。
+
+// shellQuote 用单引号包裹 shell 参数并转义内部的单引号。
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 // buildCurlPreviewFromStep 基于渲染后的 step 生成 cURL（含新认证/body 类型）。
-func buildCurlPreviewFromStep(step *model.Step, method, rawURL string, headers, query map[string]string, body string) string {
-	full := mergeQuery(rawURL, query)
-	parts := []string{"curl " + shellQuote(full)}
-
-	m := strings.ToUpper(strings.TrimSpace(method))
-	if m != "" && m != http.MethodGet {
-		parts = append(parts, "-X "+shellQuote(m))
-	}
-
-	all := make(map[string]string, len(headers)+2)
-	for k, v := range headers {
-		all[k] = v
-	}
-	if step != nil {
-		switch strings.ToLower(step.AuthType) {
-		case "bearer":
-			all["Authorization"] = "Bearer " + step.AuthToken
-		case "basic":
-			token := base64.StdEncoding.EncodeToString([]byte(step.AuthUser + ":" + step.AuthPass))
-			all["Authorization"] = "Basic " + token
-		case "apikey":
-			if !strings.EqualFold(step.AuthKeyIn, "query") && step.AuthKeyName != "" {
-				all[step.AuthKeyName] = step.AuthKeyValue
-			}
-		}
-		// 表单/GraphQL 的 body 由 buildBody 处理，此处仅展示可读提示
-		switch strings.ToLower(step.BodyType) {
-		case "form-data", "urlencoded":
-			for _, f := range step.FormData {
-				all["# form "+f.Key] = f.Value
-			}
-		case "graphql":
-			all["Content-Type"] = "application/json"
-		}
-	}
-	hkeys := make([]string, 0, len(all))
-	for k := range all {
-		hkeys = append(hkeys, k)
-	}
-	sort.Strings(hkeys)
-	for _, k := range hkeys {
-		parts = append(parts, "-H "+shellQuote(k+": "+all[k]))
-	}
-	if strings.EqualFold(strings.TrimSpace(step.BodyType), "graphql") {
-		vars := step.GraphQLVariables
-		if strings.TrimSpace(vars) == "" {
-			vars = "{}"
-		}
-		payload := fmt.Sprintf(`{"query":%s,"variables":%s}`, shellQuote(step.GraphQLQuery), vars)
-		parts = append(parts, "--data-raw "+shellQuote("(graphql) "+payload))
-	} else if body != "" {
-		parts = append(parts, "--data-raw "+shellQuote(body))
-	}
-	return strings.Join(parts, " \\\n  ")
-}
-
-// BuildCurlPreview 把请求配置反向生成 cURL 命令，方便复制复现（请求预览，兼容旧调用）。
-func BuildCurlPreview(method, rawURL string, headers, query map[string]string, body string, auth *model.Step) string {
-	full := mergeQuery(rawURL, query)
-	parts := []string{"curl " + shellQuote(full)}
-
-	m := strings.ToUpper(strings.TrimSpace(method))
-	if m != "" && m != http.MethodGet {
-		parts = append(parts, "-X "+shellQuote(m))
-	}
-
-	all := make(map[string]string, len(headers)+2)
-	for k, v := range headers {
-		all[k] = v
-	}
-	if auth != nil {
-		switch strings.ToLower(auth.AuthType) {
-		case "bearer":
-			all["Authorization"] = "Bearer " + auth.AuthToken
-		case "basic":
-			token := base64.StdEncoding.EncodeToString([]byte(auth.AuthUser + ":" + auth.AuthPass))
-			all["Authorization"] = "Basic " + token
-		}
-	}
-	hkeys := make([]string, 0, len(all))
-	for k := range all {
-		hkeys = append(hkeys, k)
-	}
-	sort.Strings(hkeys)
-	for _, k := range hkeys {
-		parts = append(parts, "-H "+shellQuote(k+": "+all[k]))
-	}
-	if body != "" {
-		parts = append(parts, "--data-raw "+shellQuote(body))
-	}
-	return strings.Join(parts, " \\\n  ")
-}

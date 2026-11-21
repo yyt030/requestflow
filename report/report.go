@@ -29,16 +29,16 @@ type Data struct {
 
 // IterationData 单次数据迭代（非数据驱动时只有一轮，Data 为空）。
 type IterationData struct {
-	Index      int                       `json:"index"`
-	Data       map[string]string         `json:"data,omitempty"`
-	OK         bool                      `json:"ok"`
-	Err        string                    `json:"error,omitempty"`
-	Started    time.Time                 `json:"started"`
-	Ended      time.Time                 `json:"ended"`
-	DurationMS int64                     `json:"durationMs"`
-	Steps      []engine.StepTrace        `json:"steps"`
-	Assertions []engine.AssertDetail     `json:"assertions"`
-	Vars       map[string]interface{}    `json:"vars,omitempty"`
+	Index      int                    `json:"index"`
+	Data       map[string]string      `json:"data,omitempty"`
+	OK         bool                   `json:"ok"`
+	Err        string                 `json:"error,omitempty"`
+	Started    time.Time              `json:"started"`
+	Ended      time.Time              `json:"ended"`
+	DurationMS int64                  `json:"durationMs"`
+	Steps      []engine.StepTrace     `json:"steps"`
+	Assertions []engine.AssertDetail  `json:"assertions"`
+	Vars       map[string]interface{} `json:"vars,omitempty"`
 }
 
 // NewFromResult 用单次结果构造报告数据（非数据驱动）。

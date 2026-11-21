@@ -32,8 +32,8 @@ func TestDetail(t *testing.T) {
 func TestShortCommit(t *testing.T) {
 	cases := map[string]string{
 		"abcdef1234567890": "abcdef1",
-		"abc123":            "abc123",
-		"":                  "",
+		"abc123":           "abc123",
+		"":                 "",
 	}
 	for in, want := range cases {
 		if got := shortCommit(in); got != want {

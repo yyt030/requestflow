@@ -82,7 +82,7 @@ func TestCookieSession(t *testing.T) {
 	login := enabledStep("1", "登录", model.StepRequest)
 	login.Method, login.URL = "POST", srv.URL+"/login"
 	check := enabledStep("2", "校验cookie", model.StepRequest)
-	check.URL = srv.URL+"/home"
+	check.URL = srv.URL + "/home"
 	check.Assert = []model.Assert{{Source: "body", Op: "contains", Value: `"ok":true`}}
 
 	sc := &model.Scenario{Name: "cookie test", Steps: []model.Step{login, check}}
@@ -177,8 +177,8 @@ func TestScriptAndExport(t *testing.T) {
 // TestContextExpressions 验证模板与表达式求值。
 func TestContextExpressions(t *testing.T) {
 	ctx := NewContext(map[string]string{
-		"n": "5",
-		"obj": `{"a":{"b":"hello"}}`,
+		"n":    "5",
+		"obj":  `{"a":{"b":"hello"}}`,
 		"list": `["x","y","z"]`,
 	})
 	cases := []struct {

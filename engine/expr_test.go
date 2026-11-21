@@ -75,7 +75,7 @@ func TestEval_WhitespaceLogic(t *testing.T) {
 // TestMerge_ScenarioShape 用一个内联场景确认 merge 步骤类型被正确调度（轻量补充）。
 func TestMerge_ScenarioShape(t *testing.T) {
 	sc := &model.Scenario{
-		Name: "shape",
+		Name:      "shape",
 		Variables: map[string]string{"flag": "1"},
 		Steps: []model.Step{
 			{ID: "m", Name: "gate", Type: model.StepMerge, Enabled: true,

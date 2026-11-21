@@ -20,7 +20,7 @@ func TestRunDatasetInjectsVariables(t *testing.T) {
 	defer srv.Close()
 
 	sc := &model.Scenario{
-		Name: "ds",
+		Name:      "ds",
 		Variables: map[string]string{"who": "global"},
 		Steps: []model.Step{{
 			Type: model.StepRequest, Enabled: true, Method: "GET",

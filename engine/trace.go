@@ -9,13 +9,13 @@ import (
 
 // StepTrace 单步执行的结构化记录，供测试报告使用。
 type StepTrace struct {
-	Name       string        `json:"name"`
+	Name       string         `json:"name"`
 	Type       model.StepType `json:"type"`
-	Status     string        `json:"status"` // pass | fail
-	Err        string        `json:"error,omitempty"`
-	Started    time.Time     `json:"started"`
-	Ended      time.Time     `json:"ended"`
-	DurationMS int64         `json:"durationMs"`
+	Status     string         `json:"status"` // pass | fail
+	Err        string         `json:"error,omitempty"`
+	Started    time.Time      `json:"started"`
+	Ended      time.Time      `json:"ended"`
+	DurationMS int64          `json:"durationMs"`
 }
 
 // TraceLog 收集一次场景执行的步骤与断言记录（线程安全，供并行子任务共享）。
