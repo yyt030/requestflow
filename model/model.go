@@ -186,6 +186,29 @@ type Extract struct {
 	// CSS 提取（kind=css）：多元素提取为数组。
 	CssField string `json:"cssField,omitempty"` // text（默认）| html（内部 HTML）| attr（属性值）
 	CssAttr  string `json:"cssAttr,omitempty"`  // cssField=attr 时的属性名，如 href / content
+
+	// CSS 结构化行提取（kind=cssRows）：按行选择器逐行提取多个子字段，直接产出对象数组，
+	// 从机制上避免「多个独立 css 选择器分别提数组再 zip」的错位风险。
+	// 用法：Path=行选择器（如 div.item），CssFields 列出该行内每个字段的选择器与取值方式。
+	CssFields []CSSField `json:"cssFields,omitempty"`
+
+	// ExpectMin：提取结果最少条数校验。>0 时若提取到的元素数小于该值即报错（翻页抓空/反爬页兜底）。
+	// 对 cssRows 是行数，对 css/jsonpath 是数组长度；标量按 1 计。0 表示不校验。
+	ExpectMin int `json:"expectMin,omitempty"`
+
+	// ResolveURL：CSS attr 提取到的 URL 值按 baseUrl 绝对化，并解码常见跳转链接
+	// （百度 link?url=、Bing ck/a?u=a1...）。仅对 css/cssRows 的 attr 字段生效。
+	ResolveURL bool `json:"resolveUrl,omitempty"`
+}
+
+// CSSField 定义 cssRows 行提取中的一个子字段。
+// 每个字段在「行元素」内部再按 Path 选择（Path 为空表示取行元素自身）。
+type CSSField struct {
+	Name     string `json:"name"`               // 输出对象中的字段名
+	Path     string `json:"path,omitempty"`     // 行内 CSS 选择器；空表示行元素自身
+	CssField string `json:"cssField,omitempty"` // text（默认）| html | attr
+	CssAttr  string `json:"cssAttr,omitempty"`  // cssField=attr 时的属性名
+	Resolve  bool   `json:"resolve,omitempty"`  // 该字段值是否做 URL 绝对化与跳转解码
 }
 
 // Assert 对响应做断言，实现"类似自动化测试"。
@@ -221,6 +244,14 @@ type Loop struct {
 	DedupVar   string `json:"dedupVar,omitempty"`
 	DedupField string `json:"dedupField,omitempty"`
 	DedupStat  string `json:"dedupStat,omitempty"`
+
+	// 健壮性（P2）：DelayMs 每轮子步骤执行前的请求间隔（毫秒），用于限速防反爬。
+	// MinRowsVar 指定一个数组变量名，本轮结束后若该变量元素数 < MinRows 则视为空页，
+	// 触发告警；RetryOnEmpty>0 时空页自动重试该次数（重新执行本轮子步骤）。
+	DelayMs      int    `json:"delayMs,omitempty"`
+	MinRowsVar   string `json:"minRowsVar,omitempty"`
+	MinRows      int    `json:"minRows,omitempty"`
+	RetryOnEmpty int    `json:"retryOnEmpty,omitempty"`
 }
 
 // Condition 单个条件：对变量值做比较（可视化配置用）。

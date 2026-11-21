@@ -194,3 +194,31 @@ func TestVariablePreviewHelpers(t *testing.T) {
 		t.Fatalf("文本值展示错误: %q", cell)
 	}
 }
+
+// 验证结果表辅助：复制列、复制全部(TSV)、CSV 编码。
+func TestResultExportHelpers(t *testing.T) {
+	cols := []string{"name", "url"}
+	rows := [][]string{
+		{"肖申克的救赎", "https://movie.douban.com/subject/1292052/"},
+		{"霸王别姬, 经典", "https://movie.douban.com/subject/1291546/"},
+	}
+	// 复制单列
+	if got := resultColumnText(rows, cols, 0); got != "肖申克的救赎\n霸王别姬, 经典" {
+		t.Fatalf("复制列错误: %q", got)
+	}
+	// 复制全部 = TSV
+	if got := resultColumnText(rows, cols, -1); !strings.Contains(got, "\t") {
+		t.Fatalf("复制全部应为 TSV: %q", got)
+	}
+	// CSV 含表头且逗号字段被加引号
+	csv := resultCSV(cols, rows)
+	if !strings.HasPrefix(csv, "name,url\n") {
+		t.Fatalf("CSV 缺表头: %q", csv[:20])
+	}
+	if !strings.Contains(csv, `"霸王别姬, 经典"`) {
+		t.Fatalf("CSV 逗号字段未转义: %q", csv)
+	}
+	if indexOfStr(cols, "url") != 1 || indexOfStr(cols, "none") != -1 {
+		t.Fatal("indexOfStr 错误")
+	}
+}

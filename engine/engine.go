@@ -531,12 +531,52 @@ func (e *Engine) runLoop(step model.Step, depth int) error {
 
 		e.emit("loop-iter", step.ID, step.Name, fmt.Sprintf("第 %d 轮 (page=%d)", i+1, page))
 
-		for _, child := range step.Children {
-			if !child.Enabled {
-				continue
+		// 限速：每轮执行前等待，降低被反爬概率。
+		if lp.DelayMs > 0 {
+			time.Sleep(time.Duration(lp.DelayMs) * time.Millisecond)
+		}
+
+		// 执行本轮子步骤；空页时按 RetryOnEmpty 重试。
+		maxRetry := lp.RetryOnEmpty
+		if maxRetry < 0 {
+			maxRetry = 0
+		}
+		for attempt := 0; attempt <= maxRetry; attempt++ {
+			var childErr error
+			for _, child := range step.Children {
+				if !child.Enabled {
+					continue
+				}
+				if err := e.runStep(child, depth+1); err != nil {
+					childErr = err
+					break
+				}
 			}
-			if err := e.runStep(child, depth+1); err != nil {
-				return err
+			if childErr != nil {
+				return childErr
+			}
+			empty := false
+			if lp.MinRowsVar != "" {
+				n := 0
+				if list, ok := toSlice(e.ctx.Get(lp.MinRowsVar)); ok {
+					n = len(list)
+				}
+				threshold := lp.MinRows
+				if threshold <= 0 {
+					threshold = 1
+				}
+				empty = n < threshold
+			}
+			if !empty {
+				break
+			}
+			if attempt < maxRetry {
+				e.emit("log", step.ID, step.Name, fmt.Sprintf("第 %d 轮变量 %s 命中不足，重试 %d/%d", i+1, lp.MinRowsVar, attempt+1, maxRetry))
+				if lp.DelayMs > 0 {
+					time.Sleep(time.Duration(lp.DelayMs) * time.Millisecond)
+				}
+			} else {
+				e.emit("log", step.ID, step.Name, fmt.Sprintf("警告：第 %d 轮变量 %s 命中不足（疑似反爬页或抓空页）", i+1, lp.MinRowsVar))
 			}
 		}
 

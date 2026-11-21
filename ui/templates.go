@@ -39,7 +39,49 @@ func scenarioTemplates() []ScenarioTemplate {
 			Desc:  "提取跳转链接 → base64decode 数组 → dedup 去重，演示 P0 新能力",
 			Build: tmplSearchCollect,
 		},
+		{
+			Name:  "搜索引擎采集（cssRows 结构化行）",
+			Desc:  "行选择器一次提取标题+真实链接，配对零错位 → 按 URL 去重 → 取前 N 条 → 导出",
+			Build: tmplSearchRows,
+		},
 	}
+}
+
+// tmplSearchRows 演示 cssRows 结构化行提取：标题与链接来自同一行，杜绝多选择器 zip 错位。
+// 默认按百度结果结构预设（div.c-container[tpl=www_index] + mu 属性），可改为 Bing/其他站点。
+func tmplSearchRows() *model.Scenario {
+	sc := model.NewScenario("示例：搜索引擎采集（结构化行）")
+	sc.BaseURL = "https://www.baidu.com"
+	sc.Variables["keyword"] = "golang"
+	search := model.Step{
+		ID: newID(), Name: "搜索", Type: model.StepRequest, Enabled: true,
+		Method: "GET", URL: "/s",
+		Query: map[string]string{"wd": "{{keyword}}"},
+		Extract: []model.Extract{
+			{
+				Name: "rows", Kind: "cssrows", Path: `div.c-container[tpl="www_index"]`,
+				ExpectMin: 1,
+				CssFields: []model.CSSField{
+					{Name: "title", Path: "h3", CssField: "text"},
+					{Name: "url", CssField: "attr", CssAttr: "mu", Resolve: true},
+				},
+			},
+		},
+	}
+	dedup := model.Step{
+		ID: newID(), Name: "按 URL 去重", Type: model.StepProcess, Enabled: true,
+		Op: "dedup", Args: map[string]string{"from": "rows", "field": "url", "to": "rows", "stat": "dupCount"},
+	}
+	limit := model.Step{
+		ID: newID(), Name: "取前 30 条", Type: model.StepProcess, Enabled: true,
+		Op: "limit", Args: map[string]string{"from": "rows", "count": "30", "to": "top30"},
+	}
+	exp := model.Step{
+		ID: newID(), Name: "导出 JSON", Type: model.StepExport, Enabled: true,
+		From: "top30", Format: "json", Path: "search_result.json",
+	}
+	sc.Steps = []model.Step{search, dedup, limit, exp}
+	return sc
 }
 
 func tmplLoginToken() *model.Scenario {

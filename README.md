@@ -14,6 +14,9 @@
 - **CSS 选择器提取（HTML 抓取）**：extract 支持 `kind:css`，用 CSS 选择器从 HTML 响应提取，**多元素自动合并为数组**，可取文本 / 内部 HTML / 属性值（`text`/`html`/`attr`），自动解码实体与收敛空白。配合 `loop` 翻页 + `process` 累积 + `export`，无需写 JS 即可抓取网页列表（如豆瓣 Top100 片名/导演/评分）。纯 Go 实现，无 cgo。
 - **数组去重与 Base64 编解码**：内置处理新增 `dedup`（数组按整行或按 `field` 字段去重，可选 `stat` 写入重复数）、`base64decode` / `base64encode` **支持数组逐项处理**，解码兼容标准 / URL-safe / 无 padding（可直接解 Bing 跳转链接）。JS（goja）与 Python（Starlark）脚本引擎均注入 Web 标准 `atob` / `btoa`，处理跳转链接无需手写解码函数。
 - **变量预览表格**：运行结果「变量」视图按 **变量名 / 类型·数量 / 值** 三列展示，**数组与对象可点击展开逐元素查看**，标量显示完整值（不再截断到 80 字符）。
+- **CSS 结构化行提取（`cssRows`）**：与 `kind:css` 并列新增 `kind:cssRows`——只需一个「行选择器」+ 若干「行内子字段」（每个子字段可独立取 `text`/`html`/`attr`），一次提取直接产出 `[{title, url}, ...]` 对象数组，**从机制上杜绝「多个选择器分别提数组再按索引 zip」的错位风险**；采集搜索结果/列表页免写 JS 组装。
+- **数据整形内置处理**：新增 `zip`（多数组按索引合成对象数组）、`limit`/`take`/`slice`（取数组区间，如取前 30 条）、`resolve_url`（相对地址按 `baseUrl` 绝对化 + 百度/Bing 跳转链接解码），采集场景绝大多数整形需求无需写脚本。
+- **采集健壮性与校验**：提取可配 `expectMin`（条数不足即报错，兜底反爬页/抓空页）；`loop` 支持 `delayMs` 限速、`minRowsVar`+`minRows` 空页检测与 `retryOnEmpty` 自动重试；结果表支持一键「复制列 / 导出 CSV」。
 - **循环累积去重**：`loop` 可配 `dedupVar` + `dedupField`，循环结束后对累积数组按字段去重并在日志提示去掉的重复数（`dedupStat` 可写入该计数变量），多源/多页采集去重无需写脚本。
 - **工具栏分组 + 场景模板向导**：顶栏按 **文件｜数据｜运行** 语义分组，次要功能（历史/报告/导入 API/关于）收进「⋯ 更多」溢出菜单；导入统一为一个「⇩ 导入」下拉（cURL 粘贴 / Postman·OpenAPI 文件）；点「新建」弹出**模板向导**，内置空白 / 登录取 Token / 翻页采集去重导出 / TCP 长连接帧 / 搜索采集解码去重等模板，一键载入，降低手写 JSON 门槛。
 - **内容一键格式化**：Body（raw）与脚本编辑区提供「✨ 格式化」按钮，自动识别并美化 **JSON / XML / HTML / 键值对**（`key: value` / `key=value` 按列对齐）；JSON 缩进两空格、幂等不重复改动，非结构化内容保持原样并给出提示。与调试响应区已有的 JSON 美化体验一致。
@@ -390,6 +393,24 @@ JSON 示例（长连接 + 2 字节二进制帧头，两步复用同一 socket）
 
 无匹配元素返回 `null`（可用 `default` 兜底）；`kind:css` 与 `jsonpath`/`regex` 可混用。完整案例见 `verify/douban_top100_css_scenario.json`（loop 翻 4 页 → CSS 提取 → JS 组装 → 导出 100 条，与 JS 正则版逐条比对 0 差异）。
 
+**结构化行提取（`kind:cssRows`）**：当需要从同一行的多个字段配对成对象时（如搜索结果的标题+链接），用 `cssRows` 一次提取，避免两个 `css` 选择器分别提数组再 zip 的错位风险。
+
+| 字段 | 说明 |
+|---|---|
+| `path` | 行选择器，如 `div.c-container[tpl="www_index"]` |
+| `cssFields` | 行内子字段数组，每项含 `name`（输出字段名）、`path`（行内选择器，空=行元素自身）、`cssField`（text/html/attr）、`cssAttr`、`resolve`（是否 URL 绝对化+跳转解码） |
+| `expectMin` | 最少行数校验，不足即报错（兜底反爬页/抓空页） |
+
+```json
+{ "name": "rows", "kind": "cssrows", "path": "div.c-container[tpl=\"www_index\"]", "expectMin": 1,
+  "cssFields": [
+    { "name": "title", "path": "h3", "cssField": "text" },
+    { "name": "url", "cssField": "attr", "cssAttr": "mu", "resolve": true }
+  ] }
+```
+
+`resolve` / `resolve_url` 会：把相对地址按场景 `baseUrl`（或页面 `<base href>`）绝对化，并解码百度 `link?url=`、Bing `ck/a?u=a1...` 等跳转链接为真实目标地址。案例见 `verify/baidu_golang_v2_scenario.json`（百度 golang 前 30 条，与早期 JS zip 版 `verify/baidu_golang_top30.json` 逐条一致，0 差异）。
+
 ### 断言（assert）
 
 `source`：`status` / `jsonpath` / `body` / `header` / `variable`；`op`：`eq` `ne` `contains` `exists` `gt` `gte` `lt` `lte`。
@@ -419,12 +440,17 @@ JSON 示例（长连接 + 2 字节二进制帧头，两步复用同一 socket）
 | `flatten` | 合并多个数组变量 | `from=a,b` `to` |
 | `format_time` | 时间戳格式化 | `from` `in=unix/unixms` `layout` `to` |
 | `dedup` | 数组去重（保序），`field` 为空按整行去重 | `from` `field` `to=deduped` `stat`（可选，写入重复数） |
+| `zip` | 多数组按索引合成对象数组（以最长为准，短数组补空） | `from=titles,links` `fields=title,url` `to=zipped` |
+| `limit` `take` `slice` | 取数组区间（取前 N 条 / `[start,end)`） | `from` `start`（默认0）`count` 或 `end` `to=limited` |
+| `resolve_url` | URL 绝对化 + 跳转链接解码（百度/Bing） | `from` `base`（可选）`to` |
 | `join` | 拼接字符串 | `values=a,b,c` `sep` `to` |
 | `base64encode` `base64decode` | Base64 编解码，**支持数组逐项处理**；解码兼容标准/URL-safe/无 padding | `from` `to` |
 | `urlencode` `urldecode` | URL 编解码 | `from` `to` |
 
 > `dedup` 示例：`{"op":"dedup","args":{"from":"links","field":"link","to":"uniq","stat":"dupCount"}}`
-> `base64decode` 对数组变量逐项解码返回数组；对标量返回字符串。Bing 跳转链接（`u=a1<base64url>`）先用脚本去掉 `a1` 前缀即可用 `atob` 或此 op 解码。
+> `zip` 示例：`{"op":"zip","args":{"from":"titles,links","fields":"title,url","to":"rows"}}` — 免写 JS 的数组配对。
+> `limit` 示例：`{"op":"limit","args":{"from":"rows","count":"30","to":"top30"}}` — 免写 `slice` 脚本。
+> `base64decode` 对数组变量逐项解码返回数组；对标量返回字符串。Bing 跳转链接可用 `atob`、`resolve_url` 或此 op 解码。
 
 ## 自定义脚本（script）
 

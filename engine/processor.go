@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -117,6 +118,18 @@ func runProcess(ctx *Context, step model.Step) error {
 	case "dedup": // 数组去重：args[from], args[field]（可选）, args[to], args[stat]（可选）
 		return processDedup(ctx, args)
 
+	case "zip": // 多数组按索引合成对象数组：args[from]="titles,links", args[fields]="title,url", args[to]
+		return processZip(ctx, args)
+
+	case "limit", "take", "slice": // 取数组区间：args[from], args[start]（默认0）, args[count]（N）, args[end]（可选）, args[to]
+		return processLimit(ctx, args, op)
+
+	case "resolve_url": // URL 绝对化 + 跳转链接解码：args[from], args[base]（可选）, args[to]
+		v := ctx.resolveArg(args["from"])
+		base := get("base")
+		ctx.Set(get("to"), resolveURLValue(v, base))
+		return nil
+
 	case "base64encode":
 		outName := get("to")
 		if outName == "" {
@@ -176,6 +189,87 @@ func runProcess(ctx *Context, step model.Step) error {
 		return nil
 	}
 	return fmt.Errorf("未知的内置处理 op: %q", step.Op)
+}
+
+// processZip 把多个数组按索引合成对象数组，避免手写 JS。
+// args: from=逗号分隔的多个数组变量名, fields=逗号分隔的输出字段名（与 from 一一对应）,
+// to=目标变量（默认 zipped）。任一数组较短时该字段留空，以最长的为准。
+func processZip(ctx *Context, args map[string]string) error {
+	get := func(k string) string { return ctx.Render(args[k]) }
+	names := strings.Split(get("from"), ",")
+	fields := strings.Split(get("fields"), ",")
+	out := get("to")
+	if out == "" {
+		out = "zipped"
+	}
+	listOfLists := make([][]interface{}, 0, len(names))
+	maxLen := 0
+	for _, n := range names {
+		list, ok := toSlice(ctx.resolveArg(strings.TrimSpace(n)))
+		if !ok {
+			list = nil
+		}
+		listOfLists = append(listOfLists, list)
+		if len(list) > maxLen {
+			maxLen = len(list)
+		}
+	}
+	result := make([]interface{}, 0, maxLen)
+	for i := 0; i < maxLen; i++ {
+		row := make(map[string]interface{})
+		for j, list := range listOfLists {
+			key := "col" + fmt.Sprint(j)
+			if j < len(fields) && strings.TrimSpace(fields[j]) != "" {
+				key = strings.TrimSpace(fields[j])
+			}
+			if i < len(list) {
+				row[key] = list[i]
+			} else {
+				row[key] = ""
+			}
+		}
+		result = append(result, row)
+	}
+	ctx.Set(out, result)
+	return nil
+}
+
+// processLimit 取数组区间：start 起、count 条，或 start..end。避免手写 slice JS。
+// args: from, start（默认0）, count（条数）, end（结束下标，含 count 时忽略）, to。
+func processLimit(ctx *Context, args map[string]string, op string) error {
+	get := func(k string) string { return ctx.Render(args[k]) }
+	list, ok := toSlice(ctx.resolveArg(args["from"]))
+	if !ok {
+		return fmt.Errorf("%s: %s 不是数组", op, get("from"))
+	}
+	start := 0
+	if s := get("start"); s != "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && n > 0 {
+			start = n
+		}
+	}
+	if start > len(list) {
+		start = len(list)
+	}
+	end := len(list)
+	if s := get("end"); s != "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && n >= start && n <= len(list) {
+			end = n
+		}
+	} else if s := get("count"); s != "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && n >= 0 {
+			end = start + n
+			if end > len(list) {
+				end = len(list)
+			}
+		}
+	}
+	out := get("to")
+	if out == "" {
+		out = "limited"
+	}
+	ctx.Set(out, list[start:end])
+	return nil
 }
 
 // processDedup 数组去重：按 field（可选）或整个元素去重，保持原顺序。

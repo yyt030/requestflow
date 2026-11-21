@@ -8,7 +8,7 @@ import (
 
 func TestScenarioTemplates(t *testing.T) {
 	templates := scenarioTemplates()
-	if len(templates) < 5 {
+	if len(templates) < 6 {
 		t.Fatalf("模板数量不足: %d", len(templates))
 	}
 	for _, tpl := range templates {
@@ -66,5 +66,31 @@ func TestTemplateNewCapabilities(t *testing.T) {
 	crawl := byName["翻页采集（CSS + 去重 + 导出）"]
 	if len(crawl.Steps) == 0 || crawl.Steps[0].Loop == nil || crawl.Steps[0].Loop.DedupVar != "allRows" {
 		t.Fatalf("翻页模板未配置累积去重: %+v", crawl.Steps)
+	}
+}
+
+// 验证新增的搜索引擎采集模板使用 cssRows 结构化行提取 + limit + 去重。
+func TestTemplateSearchRows(t *testing.T) {
+	byName := map[string]model.Scenario{}
+	for _, tpl := range scenarioTemplates() {
+		byName[tpl.Name] = *tpl.Build()
+	}
+	sc, ok := byName["搜索引擎采集（cssRows 结构化行）"]
+	if !ok {
+		t.Fatal("缺少搜索引擎采集模板")
+	}
+	foundRows, foundLimit := false, false
+	for _, s := range sc.Steps {
+		if s.Op == "limit" {
+			foundLimit = true
+		}
+		for _, ex := range s.Extract {
+			if ex.Kind == "cssrows" && len(ex.CssFields) >= 2 && ex.ExpectMin > 0 {
+				foundRows = true
+			}
+		}
+	}
+	if !foundRows || !foundLimit {
+		t.Fatalf("搜索行模板缺少 cssRows/limit: rows=%v limit=%v", foundRows, foundLimit)
 	}
 }

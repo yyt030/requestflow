@@ -156,9 +156,10 @@ type App struct {
 	// 底部控制台视图：0=日志 1=结果表 2=变量
 	consoleView int
 	// 结果表：选中的数组变量名与表格状态
-	resultVar   string
-	resultState ui.ListState
-	resultCols  []ui.TableColumn
+	resultVar     string
+	resultState   ui.ListState
+	resultCols    []ui.TableColumn
+	resultCopyCol int // 结果表「复制列」选中的列序号，-1=全部
 	// 变量预览（P1）：数组/对象变量的可展开状态，按变量名记录。
 	varExpanded map[string]bool
 	// 全局变量编辑
@@ -1702,7 +1703,7 @@ func (a *App) editorExtract(c *ui.Context, t *ui.Theme, step *model.Step) {
 			step.Extract = append(step.Extract, model.Extract{Source: "body", Kind: "jsonpath"})
 		}
 	})
-	fieldHint(c, t, "从响应取值存入变量：来源选 body/header/cookie；jsonpath 填 data.token，regex 填正则表达式；css 用 HTML 选择器（如 li.item a），多元素自动提取为数组，可指定取 text/html/attr。")
+	fieldHint(c, t, "来源选 body/header/cookie；jsonpath 填 data.token，regex 填正则；css 用选择器多元素提数组；cssRows 用「行选择器+行内子字段」一次提取对象数组（标题+链接配对零错位）。expectMin 可防反爬空页。")
 	for i := range step.Extract {
 		ex := &step.Extract[i]
 		idx := i
@@ -1717,16 +1718,19 @@ func (a *App) editorExtract(c *ui.Context, t *ui.Theme, step *model.Step) {
 			ui.Row(c).Gap(8).Children(func() {
 				sources := []string{"body", "header", "cookie", "status"}
 				ui.Select(c, &ex.Source, sources).Label("来源").Grow(1)
-				kinds := []string{"jsonpath", "regex", "whole", "css"}
+				kinds := []string{"jsonpath", "regex", "whole", "css", "cssRows"}
 				ui.Select(c, &ex.Kind, kinds).Label("方式").Grow(1)
 				ui.TextInput(c, &ex.Default).Placeholder("可选").Label("默认值").Grow(1)
 			})
+			kind := strings.ToLower(strings.TrimSpace(ex.Kind))
 			placeholder := "data.token 或正则"
-			if strings.EqualFold(strings.TrimSpace(ex.Kind), "css") {
+			if kind == "css" {
 				placeholder = "CSS 选择器，如 li.item a.title"
+			} else if kind == "cssrows" {
+				placeholder = "行选择器，如 div.item（每行提取多个字段）"
 			}
 			ui.TextInput(c, &ex.Path).Placeholder(placeholder).Label("路径 / 表达式")
-			if strings.EqualFold(strings.TrimSpace(ex.Kind), "css") {
+			if kind == "css" {
 				ui.Row(c).Gap(8).Children(func() {
 					fields := []string{"text", "html", "attr"}
 					if strings.TrimSpace(ex.CssField) == "" {
@@ -1738,8 +1742,56 @@ func (a *App) editorExtract(c *ui.Context, t *ui.Theme, step *model.Step) {
 					}
 				})
 			}
+			// cssRows：行内子字段编辑器（每个字段独立选择器与取值方式）。
+			if kind == "cssrows" {
+				a.editorCSSFields(c, t, ex)
+			}
+			// CSS / cssRows 通用：最少条数校验 + URL 绝对化/跳转解码。
+			if kind == "css" || kind == "cssrows" {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					minStr := fmt.Sprint(ex.ExpectMin)
+					if ui.TextInput(c, &minStr).Label("最少条数(0=不校验)").Width(160).Changed() {
+						ex.ExpectMin, _ = strconv.Atoi(strings.TrimSpace(minStr))
+					}
+					ui.Checkbox(c, &ex.ResolveURL, "URL 绝对化/跳转解码")
+				})
+			}
 		})
 	}
+}
+
+// editorCSSFields 配置 cssRows 的行内子字段：每行一个字段名 + 行内选择器 + 取值方式(+属性名/+resolve)。
+func (a *App) editorCSSFields(c *ui.Context, t *ui.Theme, ex *model.Extract) {
+	ui.Column(c).Padding(0, 8, 0, 8).Gap(4).Children(func() {
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "行内子字段").FontSize(11).Bold().TextColor(t.TextMuted)
+			ui.Spacer(c)
+			if ui.Button(c, "+ 字段").Clicked() {
+				ex.CssFields = append(ex.CssFields, model.CSSField{CssField: "text"})
+			}
+		})
+		fieldHint(c, t, "字段名=输出对象的 key；行内选择器留空表示取行元素自身；attr 需填属性名。")
+		for j := range ex.CssFields {
+			f := &ex.CssFields[j]
+			fj := j
+			ui.Row(c.Key(fmt.Sprintf("csf-%d", fj))).Gap(6).AlignItems(ui.Center).Children(func() {
+				ui.TextInput(c, &f.Name).Placeholder("字段名,如 title").Width(120)
+				ui.TextInput(c, &f.Path).Placeholder("行内选择器,如 h3").Grow(1)
+				fields := []string{"text", "html", "attr"}
+				if strings.TrimSpace(f.CssField) == "" {
+					f.CssField = "text"
+				}
+				ui.Select(c, &f.CssField, fields).Width(80)
+				if strings.EqualFold(strings.TrimSpace(f.CssField), "attr") {
+					ui.TextInput(c, &f.CssAttr).Placeholder("href/mu").Width(90)
+				}
+				ui.Checkbox(c, &f.Resolve, "URL")
+				if ui.Button(c.Key("del"), "×").Width(26).Clicked() {
+					ex.CssFields = append(ex.CssFields[:fj], ex.CssFields[fj+1:]...)
+				}
+			})
+		}
+	})
 }
 
 func (a *App) editorAssertList(c *ui.Context, t *ui.Theme, step *model.Step) {
@@ -1888,7 +1940,7 @@ func (a *App) editorBranchChildren(c *ui.Context, t *ui.Theme, step *model.Step,
 			case model.StepScript:
 				ui.TextArea(c, &child.Code).Placeholder("vars.result = 'ok';").Height(60)
 			case model.StepProcess:
-				ops := []string{"set", "append", "json_to_table", "filter", "sort", "pick", "flatten"}
+				ops := processOps()
 				op := child.Op
 				if op == "" {
 					op = "set"
@@ -2139,6 +2191,17 @@ func (a *App) editorLoop(c *ui.Context, t *ui.Theme, step *model.Step) {
 	})
 	fieldHint(c, t, "循环结束后对「去重数组变量」按「去重字段」去重（字段为空按整行），去掉的重复数写入日志；填了「重复数变量」也会写入该变量。留空去重数组变量则不启用。")
 
+	// 健壮性（P2）：限速 + 空页检测/重试。
+	ui.Divider(c)
+	ui.Text(c, "健壮性（可选）").FontSize(11).Bold()
+	ui.Row(c).Gap(8).Children(func() {
+		intInput(c, &lp.DelayMs, "间隔 ms", "0", 100)
+		ui.TextInput(c, &lp.MinRowsVar).Placeholder("pageRows").Label("空页检测变量").Grow(1)
+		intInput(c, &lp.MinRows, "最少行", "0", 80)
+		intInput(c, &lp.RetryOnEmpty, "空页重试", "0", 80)
+	})
+	fieldHint(c, t, "间隔 ms：每轮前等待，限速防反爬；空页检测变量：本轮该数组少于「最少行」即视为抓空，按「空页重试」次数重跑本轮并记日志。")
+
 	ui.Divider(c)
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, fmt.Sprintf("循环体（%d 个子步骤）", len(step.Children))).FontSize(12).Bold()
@@ -2169,7 +2232,7 @@ func (a *App) editorLoop(c *ui.Context, t *ui.Theme, step *model.Step) {
 				ui.TextInput(c, &child.Body).Label("Body")
 				a.editorExtract(c, t, child)
 			} else {
-				ops := []string{"set", "append", "json_to_table", "filter", "sort", "pick", "flatten", "dedup", "format_time"}
+				ops := processOps()
 				op := child.Op
 				if op == "" {
 					op = "set"
@@ -2189,8 +2252,14 @@ func (a *App) editorLoop(c *ui.Context, t *ui.Theme, step *model.Step) {
 	}
 }
 
+// processOps 所有 process 步骤统一的处理操作列表，避免编排/子步骤下拉不一致。
+func processOps() []string {
+	return []string{"set", "append", "json_to_table", "filter", "sort", "pick", "flatten", "dedup",
+		"zip", "limit", "resolve_url", "format_time", "join", "base64encode", "base64decode", "urlencode", "urldecode"}
+}
+
 func (a *App) editorProcess(c *ui.Context, t *ui.Theme, step *model.Step) {
-	ops := []string{"set", "append", "json_to_table", "filter", "sort", "pick", "flatten", "dedup", "format_time", "join", "base64encode", "base64decode", "urlencode", "urldecode"}
+	ops := processOps()
 	op := step.Op
 	if op == "" {
 		op = "json_to_table"
@@ -2207,6 +2276,9 @@ func (a *App) editorProcess(c *ui.Context, t *ui.Theme, step *model.Step) {
 		"pick":          "取字段：from, fields(逗号分隔), to",
 		"flatten":       "合并数组：from(逗号分隔的多个变量), to",
 		"dedup":         "去重：from=源数组变量, to=目标变量；field 按对象字段去重，stat 写入去掉的重复数",
+		"zip":           "按索引合成对象数组：from=titles,links, fields=title,url, to=rows（免写 JS）",
+		"limit":         "取数组区间：from=源数组, count=条数(或 start/end), to=目标（取前 N 条免写 JS）",
+		"resolve_url":   "URL 绝对化+跳转解码：from=源变量, base=基准地址(可选), to=目标",
 		"format_time":   "时间格式化：from, in(unix/unixms), layout, to",
 		"join":          "拼接：values(a,b,c), sep, to",
 		"base64encode":  "Base64 编码：from=源变量, to=目标变量",
@@ -2379,6 +2451,26 @@ func (a *App) resultView(c *ui.Context, t *ui.Theme) {
 			}
 			ui.Spacer(c)
 			ui.Text(c, fmt.Sprintf("%d 行 × %d 列", len(rows), len(cols))).FontSize(11).TextColor(t.TextMuted)
+			if len(cols) > 0 {
+				colOpts := append([]string{"全部列"}, cols...)
+				ci := a.resultCopyCol + 1
+				if ci < 0 {
+					ci = 0
+				}
+				cs := colOpts[ci]
+				if ui.Select(c, &cs, colOpts).Width(110).Tooltip("选择要复制的列").Changed() {
+					idx := indexOfStr(colOpts, cs)
+					a.resultCopyCol = idx - 1
+				}
+				if ui.Button(c, "⧉ 复制").Tooltip("把选中列复制到剪贴板（全部列=TSV）").Clicked() {
+					text := resultColumnText(rows, cols, a.resultCopyCol)
+					_ = mygo.Clipboard.Write(transfer.New(transfer.NewItem(transfer.Bytes(transfer.Text, []byte(text)))))
+					a.log("已复制结果列到剪贴板（" + fmt.Sprint(len(rows)) + " 行）")
+				}
+				if ui.Button(c, "⤓ CSV").Tooltip("导出当前结果为 CSV 文件").Clicked() {
+					a.exportResultCSV(cols, rows)
+				}
+			}
 			if ui.Button(c, "刷新").Clicked() {
 				a.resultState = ui.ListState{}
 			}
@@ -2397,6 +2489,79 @@ func (a *App) resultView(c *ui.Context, t *ui.Theme) {
 			}
 		}).Grow(1)
 	})
+}
+
+// indexOfStr 返回 s 在 list 中的下标，不存在返回 -1。
+func indexOfStr(list []string, s string) int {
+	for i, v := range list {
+		if v == s {
+			return i
+		}
+	}
+	return -1
+}
+
+// resultColumnText 把结果表某列拼成多行文本；col=-1 表示所有列以 TSV 输出。
+func resultColumnText(rows [][]string, cols []string, col int) string {
+	lines := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if col >= 0 && col < len(r) {
+			lines = append(lines, r[col])
+		} else if col < 0 {
+			lines = append(lines, strings.Join(r, "\t"))
+		} else {
+			lines = append(lines, "")
+		}
+	}
+	if len(lines) == 0 && len(cols) > 0 && col >= 0 && col < len(cols) {
+		// 列存在但没有数据行时，至少复制表头，便于用户确认列含义。
+		return ""
+	}
+	return strings.Join(lines, "\n")
+}
+
+// resultCSV 把列名与数据行编码为 CSV 文本（含表头），字段按 CSV 规则加引号转义。
+func resultCSV(cols []string, rows [][]string) string {
+	var b strings.Builder
+	csvCell := func(s string) string {
+		if strings.ContainsAny(s, ",\"\n\r") {
+			return "\"" + strings.ReplaceAll(s, "\"", "\"\"") + "\""
+		}
+		return s
+	}
+	for i, h := range cols {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(csvCell(h))
+	}
+	b.WriteByte('\n')
+	for _, r := range rows {
+		for i := range cols {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			if i < len(r) {
+				b.WriteString(csvCell(r[i]))
+			}
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// exportResultCSV 弹出保存对话框，把当前结果表导出为 CSV。
+func (a *App) exportResultCSV(cols []string, rows [][]string) {
+	path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{DefaultPath: "result.csv"})
+	if err != nil || path == "" {
+		return
+	}
+	data := resultCSV(cols, rows)
+	if err := os.WriteFile(path, []byte("\ufeff"+data), 0644); err != nil {
+		a.log("导出 CSV 失败: " + err.Error())
+		return
+	}
+	a.log("已导出 CSV: " + path + fmt.Sprintf("（%d 行）", len(rows)))
 }
 
 // variableKind 返回变量的展示类型与元素/字段数量，供变量预览表格显示。
