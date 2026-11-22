@@ -31,70 +31,93 @@ func (a *App) stepList(c *ui.Context, t *ui.Theme) {
 			step := &steps[idx]
 			selected := idx == a.selectedStep
 			sc := stepColors[step.Type]
-			ui.Row(c.Key(fmt.Sprintf("step-%d", idx))).Gap(4).Padding(2, 6).Radius(6).
-				AlignItems(ui.Center).Children(func() {
-				// 文件树横折线 ├─，与上层 guide 竖线相接。
-				treeBranch(c, t)
-				// 类型色文件图标本身兼作启停开关：彩色=启用、淡化=禁用，点击切换。
-				iconColor := sc
-				enableTip := "点击禁用此步骤"
-				if !step.Enabled {
-					iconColor = t.TextMuted
-					enableTip = "点击启用此步骤"
-				}
-				fileIconBtn := ui.ButtonBase(c.Key("en")).Size(16, 16).Radius(4).
-					Tooltip(enableTip).Cursor(ui.CursorPointer)
-				fileIconBtn.Children(func() {
-					ui.Icon(c, iconFile).Size(13, 13).TextColor(iconColor)
+			// 类型色文件图标本身兼作启停开关：彩色=启用、淡化=禁用，点击切换。
+			iconColor := sc
+			enableTip := "点击禁用此步骤"
+			if !step.Enabled {
+				iconColor = t.TextMuted
+				enableTip = "点击启用此步骤"
+			}
+			name := step.Name
+			if name == "" {
+				name = string(step.Type)
+			}
+			nameColor := t.Text
+			if selected {
+				nameColor = t.Accent
+			} else if !step.Enabled {
+				nameColor = t.TextMuted
+			}
+			treeLine(c, fmt.Sprintf("step-%d", idx), nil,
+				func() {
+					fileIconBtn := ui.ButtonBase(c.Key("en")).Size(16, 16).Radius(4).
+						Tooltip(enableTip).Cursor(ui.CursorPointer)
+					fileIconBtn.Children(func() {
+						ui.Icon(c, iconFile).Size(13, 13).TextColor(iconColor)
+					})
+					if fileIconBtn.Hovered() {
+						fileIconBtn.Background(t.SurfaceHover)
+					}
+					if fileIconBtn.Clicked() {
+						step.Enabled = !step.Enabled
+					}
+				},
+				func() {
+					// 步骤名：透明底，hover 浅底，选中高亮。
+					row := ui.ButtonBase(c.Key("name")).Grow(1).Padding(3, 0).Radius(4).
+						Justify(ui.Start).AlignItems(ui.Center).
+						Tooltip("点击选中并配置；双击 HTTP 请求进入调试").Cursor(ui.CursorPointer)
+					if selected {
+						row.Background(t.Accent.Mix(t.Surface, 0.86))
+					} else if row.Hovered() {
+						row.Background(t.SurfaceHover)
+					}
+					row.Children(func() {
+						nb := ui.Text(c, name).FontSize(11)
+						if selected {
+							nb.Bold()
+						}
+						nb.TextColor(nameColor)
+					})
+					if row.Clicked() {
+						a.selectStep(idx)
+					}
+					if row.DoubleClicked() {
+						a.selectStep(idx)
+						a.openStepDebug(idx)
+					}
+				},
+				func() {
+					if stepToolButton(c, t, "up", iconMoveUp, "上移步骤", idx == 0, false).Clicked() {
+						a.moveStep(idx, -1)
+					}
+					if stepToolButton(c, t, "dn", iconMoveDown, "下移步骤", idx == len(steps)-1, false).Clicked() {
+						a.moveStep(idx, 1)
+					}
+					if stepToolButton(c, t, "del", iconDelete, "删除步骤", false, true).Clicked() {
+						a.deleteStep(idx)
+					}
 				})
-				if fileIconBtn.Hovered() {
-					fileIconBtn.Background(t.SurfaceHover)
-				}
-				if fileIconBtn.Clicked() {
-					step.Enabled = !step.Enabled
-				}
-				name := step.Name
-				if name == "" {
-					name = string(step.Type)
-				}
-				b := ui.Button(c, name).Grow(1).
-					Tooltip("点击选中并配置；双击 HTTP 请求进入调试")
-				if selected {
-					b = b.Background(t.Accent.Mix(t.Surface, 0.86)).TextColor(t.Accent).Bold()
-				}
-				if !step.Enabled {
-					b = b.TextColor(t.TextMuted)
-				}
-				if b.Clicked() {
-					a.selectStep(idx)
-				}
-				if b.DoubleClicked() {
-					a.selectStep(idx)
-					a.openStepDebug(idx)
-				}
-				if stepToolButton(c, t, "up", iconMoveUp, "上移步骤", idx == 0, false).Clicked() {
-					a.moveStep(idx, -1)
-				}
-				if stepToolButton(c, t, "dn", iconMoveDown, "下移步骤", idx == len(steps)-1, false).Clicked() {
-					a.moveStep(idx, 1)
-				}
-				if stepToolButton(c, t, "del", iconDelete, "删除步骤", false, true).Clicked() {
-					a.deleteStep(idx)
-				}
-			})
 		}
 	}
-	// 文件树底部：新建步骤入口（展开类型菜单），同样带横折线。
-	ui.Row(c).Gap(4).Padding(2, 6).AlignItems(ui.Center).Children(func() {
-		treeBranch(c, t)
-		label := "＋ 新建步骤"
-		if a.adding {
-			label = "− 收起"
+	// 文件树底部：新建步骤入口（展开类型菜单）。
+	label := "＋ 新建步骤"
+	if a.adding {
+		label = "− 收起"
+	}
+	treeLine(c, "add-step", nil, nil, func() {
+		addRow := ui.ButtonBase(c.Key("btn")).Grow(1).Padding(3, 0).Radius(4).
+			Justify(ui.Start).AlignItems(ui.Center).TextColor(t.TextMuted).Cursor(ui.CursorPointer)
+		if addRow.Hovered() {
+			addRow.Background(t.SurfaceHover)
 		}
-		if ui.Button(c, label).Grow(1).TextColor(t.TextMuted).Clicked() {
+		addRow.Children(func() {
+			ui.Text(c, label).FontSize(11).TextColor(t.TextMuted)
+		})
+		if addRow.Clicked() {
 			a.adding = !a.adding
 		}
-	})
+	}, nil)
 	if a.adding {
 		a.addMenu(c, t)
 	}
@@ -129,8 +152,7 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 	}
 	ui.Column(c).Fill().Children(func() {
 		if a.selectedStep < 0 || a.selectedStep >= len(a.scenario.Steps) {
-			emptyState(c, t, "选择一个步骤进行配置",
-				"单击左侧步骤查看配置，双击请求步骤进入调试；内置登录提取、HTTP、循环翻页、数据处理、脚本、断言、导出")
+			a.editorEmpty(c, t)
 			return
 		}
 		step := &a.scenario.Steps[a.selectedStep]
@@ -142,7 +164,7 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 				ui.Checkbox(c, &step.Enabled, "启用")
 				ui.Checkbox(c, &step.ContinueOnFail, "失败后继续")
 			})
-			ui.TextInput(c, &step.Name).Placeholder("给步骤起个名字，便于识别").Label("步骤名称")
+			ui.TextInput(c, &step.Name).Placeholder("给步骤起个名字，便于识别").Label("步骤名称").Grow(1)
 			ui.Divider(c)
 			switch step.Type {
 			case model.StepRequest:

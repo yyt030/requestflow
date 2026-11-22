@@ -60,10 +60,8 @@ type App struct {
 	resultCopyCol int // 结果表「复制列」选中的列序号，-1=全部
 	// 变量预览（P1）：数组/对象变量的可展开状态，按变量名记录。
 	varExpanded map[string]bool
-	// 全局变量编辑
-	showVars    bool
-	newVarKey   string
-	newVarValue string
+	// 变量树展开状态
+	showVars bool
 
 	// cURL 导入面板
 	showImport bool
@@ -139,6 +137,20 @@ type App struct {
 
 	// process 结构化表单：「原始参数」折叠区展开状态（按步骤 ID/名称）。
 	processRawOpen map[string]*bool
+
+	// VSCode 风格侧边栏：编辑弹窗的开关与缓冲。
+	// 场景名 / 环境名走 Modal 重命名，变量 key=value 走 Modal 编辑，
+	// 取代原先常驻的大文本框与铺开的行内输入框。
+	nameEditOpen bool
+	nameEditBuf  string
+	envEditOpen  bool
+	envEditBuf   string
+	// 变量编辑弹窗：target 为 "global" 或环境名，origKey 为空表示新建。
+	varEditOpen    bool
+	varEditTarget  string
+	varEditOrigKey string
+	varEditKey     string
+	varEditValue   string
 }
 
 // Run 启动 GUI。
@@ -217,6 +229,7 @@ func (a *App) view(c *ui.Context) {
 		ui.Modal(c, &a.showTemplateWizard, func() {
 			a.templateWizard(c, t)
 		})
+		a.sidebarModals(c, t)
 	})
 }
 

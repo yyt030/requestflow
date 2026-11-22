@@ -2,59 +2,11 @@ package ui
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
 )
-
-// keyValueRows 渲染一个通用的 key=value 映射编辑器：逐行展示已有键值对（可编辑、删除），
-// 底部提供新增行。newKey/newValue 为「新行」输入缓冲，由调用方持有以跨帧保留。
-// 供全局变量、环境变量等复用，消除重复的增删改样板。
-func keyValueRows(c *ui.Context, t *ui.Theme, vars map[string]string,
-	newKey, newValue *string, topHint string, keyWidth float32) {
-	if keyWidth <= 0 {
-		keyWidth = 110
-	}
-	ui.Column(c).Gap(4).Children(func() {
-		if topHint != "" {
-			fieldHint(c, t, topHint)
-		}
-		keys := make([]string, 0, len(vars))
-		for k := range vars {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			key := k
-			val := vars[key]
-			ui.Row(c.Key("kv-" + key)).Gap(4).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, key).FontSize(11).Width(keyWidth).SingleLine()
-				input := val
-				if ui.TextInput(c, &input).Grow(1).Changed() {
-					vars[key] = input
-				}
-				if ui.Button(c.Key("del"), "×").Width(26).Tooltip("删除此变量").Clicked() {
-					delete(vars, key)
-				}
-			})
-		}
-		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-			ui.TextInput(c, newKey).Placeholder("变量名").Width(keyWidth - 26)
-			ui.TextInput(c, newValue).Placeholder("值").Grow(1)
-			if ui.Button(c, "+").Width(26).Tooltip("添加变量").Clicked() {
-				k := strings.TrimSpace(*newKey)
-				if k != "" {
-					vars[k] = *newValue
-					*newKey, *newValue = "", ""
-				}
-			}
-		})
-	})
-}
-
-// variablesEditor 可视化编辑全局变量（key=value），直接读写 scenario.Variables。
 
 // clampHeight 把拖拽后的高度限制在 [min, max] 内。
 // emptyState 渲染居中的空状态占位：主提示 + 可选副提示，统一各面板无数据时的视觉。
@@ -107,7 +59,11 @@ func clampHeight(v, min, max float32) float32 {
 // 组件配置统一用它给出填写指引，降低界面配置的学习成本。
 func fieldHint(c *ui.Context, t *ui.Theme, text string) {
 	// 提示文字略提亮，避免 10px 灰字在浅色主题下对比度不足难以阅读。
-	ui.Text(c, "  ⓘ "+text).FontSize(10).TextColor(t.TextMuted.Mix(t.Text, 0.3))
+	// 用 Row + 固定宽图标槽，让说明文字从同一竖线起，与标题左对齐（不再用前导空格凑缩进）。
+	ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, "ⓘ").FontSize(10).TextColor(t.TextMuted.Mix(t.Text, 0.3))
+		ui.Text(c, text).FontSize(10).TextColor(t.TextMuted.Mix(t.Text, 0.3))
+	})
 }
 
 // resizableTextArea 渲染一个可拖拽调整高度的多行文本框。
