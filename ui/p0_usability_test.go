@@ -116,3 +116,28 @@ func TestVarSummary(t *testing.T) {
 		}
 	}
 }
+
+// TestRowOpDef 验证 row op 的元数据含 fields/动态区/to 三个字段，且动态区标记正确。
+func TestRowOpDef(t *testing.T) {
+	d, ok := processOpDefs()["row"]
+	if !ok {
+		t.Fatal("processOpDefs 缺少 row")
+	}
+	if d.Label == "" || d.Desc == "" {
+		t.Error("row 应有中文展示名与说明")
+	}
+	var hasFields, hasDynamic, hasTo bool
+	for _, f := range d.Fields {
+		switch f.Key {
+		case "fields":
+			hasFields = true
+		case "__dynamic__":
+			hasDynamic = f.Kind == procDynamic
+		case "to":
+			hasTo = true
+		}
+	}
+	if !hasFields || !hasDynamic || !hasTo {
+		t.Errorf("row 元数据字段不完整: fields=%v dynamic=%v to=%v", hasFields, hasDynamic, hasTo)
+	}
+}

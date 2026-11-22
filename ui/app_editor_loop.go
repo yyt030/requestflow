@@ -122,7 +122,7 @@ func (a *App) editorLoop(c *ui.Context, t *ui.Theme, step *model.Step) {
 // processOps 所有 process 步骤统一的处理操作列表，避免编排/子步骤下拉不一致。
 func processOps() []string {
 	return []string{"set", "append", "json_to_table", "filter", "sort", "pick", "flatten", "dedup",
-		"zip", "limit", "resolve_url", "format_time", "join", "base64encode", "base64decode", "urlencode", "urldecode"}
+		"zip", "row", "limit", "resolve_url", "format_time", "join", "base64encode", "base64decode", "urlencode", "urldecode"}
 }
 
 func (a *App) editorProcess(c *ui.Context, t *ui.Theme, step *model.Step) {

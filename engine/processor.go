@@ -119,6 +119,9 @@ func runProcess(ctx *Context, step model.Step) error {
 	case "zip": // 多数组按索引合成对象数组：args[from]="titles,links", args[fields]="title,url", args[to]
 		return processZip(ctx, args)
 
+	case "row": // 循环内把多字段组装成一行对象并追加到数组：args[fields], args[字段名]=表达式, args[to]
+		return processRow(ctx, args)
+
 	case "limit", "take", "slice": // 取数组区间：args[from], args[start]（默认0）, args[count]（N）, args[end]（可选）, args[to]
 		return processLimit(ctx, args, op)
 

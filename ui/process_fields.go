@@ -7,9 +7,10 @@ package ui
 type procFieldKind int
 
 const (
-	procText   procFieldKind = iota // 普通文本框
-	procNumber                      // 数字文本框
-	procSelect                      // 下拉选择
+	procText    procFieldKind = iota // 普通文本框
+	procNumber                       // 数字文本框
+	procSelect                       // 下拉选择
+	procDynamic                      // 动态字段区：按 fields 中列出的字段名逐个渲染输入框
 )
 
 // procField 描述 process 的一个参数字段。
@@ -112,6 +113,14 @@ func processOpDefs() map[string]procOpDef {
 				fFromMany,
 				{Key: "fields", Label: "输出字段名", Placeholder: "title,url（逗号分隔）", Kind: procText},
 				{Key: "to", Label: "输出到变量", Placeholder: "rows（默认）", Kind: procText},
+			},
+		},
+		"row": {
+			Label: "组装结果行", Desc: "循环内把多字段组装成一行对象并追加到数组，替代多个 set+append+zip。先填字段名列表，再逐字段填取值。",
+			Fields: []procField{
+				{Key: "fields", Label: "字段名列表", Placeholder: "book,rating,title1,link1（逗号分隔）", Kind: procText},
+				{Key: "__dynamic__", Label: "字段取值", Kind: procDynamic},
+				{Key: "to", Label: "累积到数组", Placeholder: "final", Kind: procText},
 			},
 		},
 		"limit": {

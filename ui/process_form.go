@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
 
 	"requestflow/model"
@@ -25,9 +27,12 @@ func (a *App) renderProcessForm(c *ui.Context, t *ui.Theme, step *model.Step, ra
 	ui.Text(c, def.Desc).FontSize(11).TextColor(t.TextMuted)
 	ui.Column(c).Gap(6).Children(func() {
 		for _, f := range def.Fields {
-			if f.Kind == procSelect {
+			switch f.Kind {
+			case procSelect:
 				renderProcSelect(c, t, step, f)
-			} else {
+			case procDynamic:
+				a.renderDynamicFields(c, t, step, varNames)
+			default:
 				a.renderProcText(c, t, step, f, varNames)
 			}
 		}
@@ -64,6 +69,26 @@ func (a *App) renderProcText(c *ui.Context, t *ui.Theme, step *model.Step, f pro
 	})
 	if local != step.Args[f.Key] {
 		step.Args[f.Key] = local
+	}
+}
+
+// renderDynamicFields 按 fields 中列出的字段名逐个渲染取值输入框（row op 专用）。
+// 每个字段的取值表达式存于 step.Args[字段名]，支持 {{变量}} 与变量按钮。
+func (a *App) renderDynamicFields(c *ui.Context, t *ui.Theme, step *model.Step, varNames []string) {
+	raw := step.Args["fields"]
+	names := strings.Split(raw, ",")
+	rendered := 0
+	for _, n := range names {
+		field := strings.TrimSpace(n)
+		if field == "" || field == "fields" || field == "to" {
+			continue
+		}
+		rendered++
+		f := procField{Key: field, Label: field, Placeholder: "{{item." + field + "}}", Kind: procText}
+		a.renderProcText(c, t, step, f, varNames)
+	}
+	if rendered == 0 {
+		fieldHint(c, t, "在上方「字段名列表」填写字段名（逗号分隔），这里会逐字段显示取值输入框。")
 	}
 }
 
