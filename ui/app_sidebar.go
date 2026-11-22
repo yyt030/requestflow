@@ -24,8 +24,10 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 		ui.Row(c).Padding(0, 12, 10, 12).Children(func() {
 			ui.SearchField(c, &a.stepSearch).Placeholder("搜索步骤…")
 		})
-		// 树区域。
+		// 树区域：场景工作区（多场景切换）+ 当前场景树（步骤/变量）。
 		ui.Scroll(c).Grow(1).Padding(2, 8, 10, 8).Children(func() {
+			a.workspacePanel(c, t)
+			ui.Box(c).Height(8)
 			a.fileTree(c, t)
 		})
 	})

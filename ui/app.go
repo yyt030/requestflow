@@ -151,6 +151,9 @@ type App struct {
 	varEditOrigKey string
 	varEditKey     string
 	varEditValue   string
+
+	// 场景工作区：一个目录下的多个场景 JSON，点击列表即可切换编辑（详见 app_workspace.go）。
+	workspace workspaceState
 }
 
 // Run 启动 GUI。
@@ -234,8 +237,6 @@ func (a *App) view(c *ui.Context) {
 }
 
 // templateWizard 渲染新建场景的模板选择向导。
-
-// templateWizard 渲染新建场景的模板选择向导。
 func (a *App) templateWizard(c *ui.Context, t *ui.Theme) {
 	templates := scenarioTemplates()
 	if a.templateIndex >= len(templates) {
@@ -286,8 +287,6 @@ func (a *App) templateWizard(c *ui.Context, t *ui.Theme) {
 		})
 	})
 }
-
-// consoleOnly 把运行结果（日志/结果表/变量）作为独立标签页铺满主工作区。
 
 // consoleOnly 把运行结果（日志/结果表/变量）作为独立标签页铺满主工作区。
 func (a *App) consoleOnly(c *ui.Context, t *ui.Theme) {

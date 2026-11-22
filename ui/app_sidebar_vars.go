@@ -13,6 +13,7 @@ func (a *App) sidebarModals(c *ui.Context, t *ui.Theme) {
 	ui.Modal(c, &a.nameEditOpen, func() { a.nameEditModal(c, t) })
 	ui.Modal(c, &a.envEditOpen, func() { a.envEditModal(c, t) })
 	ui.Modal(c, &a.varEditOpen, func() { a.varEditModal(c, t) })
+	ui.Modal(c, &a.workspace.newOpen, func() { a.workspaceNewModal(c, t) })
 }
 
 // environmentEditor 环境变量分层编辑树：环境选择节点 + 全局变量节点 + 当前环境变量节点。
