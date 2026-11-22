@@ -129,13 +129,7 @@ func (a *App) editorBranchChildren(c *ui.Context, t *ui.Theme, step *model.Step,
 				if ui.Select(c, &op, ops).Label("处理").Changed() {
 					child.Op = op
 				}
-				if child.Args == nil {
-					child.Args = map[string]string{}
-				}
-				argsText := mapToString(child.Args)
-				if ui.TextArea(c, &argsText).Height(50).Changed() {
-					child.Args = stringToMap(argsText, "=")
-				}
+				a.renderProcessForm(c, t, child, a.processFormRawOpen(child), collectVarNames(a.scenario))
 			}
 		})
 	}

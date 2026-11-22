@@ -136,6 +136,9 @@ type App struct {
 	bodyFmtMsg      string
 	gqlFmtMsg       string
 	debugBodyFmtMsg string
+
+	// process 结构化表单：「原始参数」折叠区展开状态（按步骤 ID/名称）。
+	processRawOpen map[string]*bool
 }
 
 // Run 启动 GUI。

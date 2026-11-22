@@ -20,8 +20,9 @@ func (a *App) editorRequest(c *ui.Context, t *ui.Theme, step *model.Step) {
 			step.Method = method
 		}
 		ui.TextInput(c, &step.URL).Placeholder("{{baseUrl}}/path 或完整 URL").Label("URL").Grow(1)
+		a.varInsertButton(c, t, &step.URL, collectVarNames(a.scenario))
 	})
-	fieldHint(c, t, "相对路径自动拼接场景 Base URL；写完整 http(s):// 则忽略 Base URL。")
+	fieldHint(c, t, "相对路径自动拼接场景 Base URL；写完整 http(s):// 则忽略 Base URL。点 URL 右侧 ⊕变量 可一键插入已定义变量。")
 
 	// Headers 与 Query 并排两列：都是短小的 key=value 列表。
 	ui.Row(c).Gap(10).Children(func() {

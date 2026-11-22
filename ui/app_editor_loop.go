@@ -111,13 +111,7 @@ func (a *App) editorLoop(c *ui.Context, t *ui.Theme, step *model.Step) {
 				if ui.Select(c, &op, ops).Label("处理操作").Changed() {
 					child.Op = op
 				}
-				if child.Args == nil {
-					child.Args = map[string]string{}
-				}
-				argsText := mapToString(child.Args)
-				if ui.TextArea(c, &argsText).Height(60).Changed() {
-					child.Args = stringToMap(argsText, "=")
-				}
+				a.renderProcessForm(c, t, child, a.processFormRawOpen(child), collectVarNames(a.scenario))
 			}
 		})
 	}
@@ -135,39 +129,15 @@ func (a *App) editorProcess(c *ui.Context, t *ui.Theme, step *model.Step) {
 	ops := processOps()
 	op := step.Op
 	if op == "" {
-		op = "json_to_table"
+		op = "limit"
 	}
-	if ui.Select(c, &op, ops).Label("处理操作").Width(180).Changed() {
-		step.Op = op
-	}
-	hints := map[string]string{
-		"set":           "设置变量：name=变量名, value=值",
-		"append":        "循环内累积：from=源变量, to=数组变量（每轮追加一项）",
-		"json_to_table": "JSON 数组转表格：from=源变量, to=目标变量",
-		"filter":        "过滤：from, field, op(eq/ne/contains/gt...), value, to",
-		"sort":          "排序：from, field, order(asc/desc), to",
-		"pick":          "取字段：from, fields(逗号分隔), to",
-		"flatten":       "合并数组：from(逗号分隔的多个变量), to",
-		"dedup":         "去重：from=源数组变量, to=目标变量；field 按对象字段去重，stat 写入去掉的重复数",
-		"zip":           "按索引合成对象数组：from=titles,links, fields=title,url, to=rows（免写 JS）",
-		"limit":         "取数组区间：from=源数组, count=条数(或 start/end), to=目标（取前 N 条免写 JS）",
-		"resolve_url":   "URL 绝对化+跳转解码：from=源变量, base=基准地址(可选), to=目标",
-		"format_time":   "时间格式化：from, in(unix/unixms), layout, to",
-		"join":          "拼接：values(a,b,c), sep, to",
-		"base64encode":  "Base64 编码：from=源变量, to=目标变量",
-		"base64decode":  "Base64 解码：from=源变量, to=目标变量",
-		"urlencode":     "URL 编码：from=源变量, to=目标变量",
-		"urldecode":     "URL 解码：from=源变量, to=目标变量",
-	}
-	fieldHint(c, t, "参数（每行 key=value，支持 {{变量}}）")
-	if h, ok := hints[op]; ok {
-		fieldHint(c, t, "「"+op+"」："+h)
-	}
-	if step.Args == nil {
-		step.Args = map[string]string{}
-	}
-	argsText := mapToString(step.Args)
-	if ui.TextArea(c, &argsText).Height(120).Changed() {
-		step.Args = stringToMap(argsText, "=")
-	}
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		if ui.Select(c, &op, ops).Label("处理操作").Width(180).Changed() {
+			step.Op = op
+		}
+		ui.Text(c, procOpLabel(op)).FontSize(11).Bold().TextColor(t.Accent)
+	})
+	names := collectVarNames(a.scenario)
+	fieldHint(c, t, varSummary(names))
+	a.renderProcessForm(c, t, step, a.processFormRawOpen(step), names)
 }

@@ -181,6 +181,8 @@ func (a *App) variablesEditor(c *ui.Context, t *ui.Theme) {
 	}
 	keyValueRows(c, t, a.scenario.Variables, &a.newVarKey, &a.newVarValue,
 		"用 {{key}} 在步骤中引用", 78)
+	// 可用变量速查：聚合全局变量 + 各步骤提取变量，帮助定位可引用名。
+	fieldHint(c, t, varSummary(collectVarNames(a.scenario)))
 }
 
 func (a *App) addMenu(c *ui.Context, t *ui.Theme) {
