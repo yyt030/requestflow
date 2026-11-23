@@ -34,6 +34,10 @@ func NewHTTPClient(timeout time.Duration, insecureTLS bool) *HTTPClient {
 	jar, _ := cookiejar.New(nil)
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureTLS},
+		// 关闭 Go 传输层自动解压：改由 decodeResponseBody 统一处理 gzip/br/deflate。
+		// 否则 Go 解压后会从 resp.Header 抹掉 Content-Encoding / Content-Length，
+		// 导致调试面板看不到服务端实际返回的压缩方式。
+		DisableCompression: true,
 	}
 	return &HTTPClient{
 		jar: jar,
@@ -144,8 +148,8 @@ func (h *HTTPClient) DoRequest(step *model.Step, method, rawURL string, headers,
 		return nil, err
 	}
 
-	// 解压 + charset 转码：Go 传输层仅在未显式设置 Accept-Encoding 时自动解压
-	// gzip；用户从浏览器粘贴 Accept-Encoding 或服务端返回 br/GBK 时需在此兜底。
+	// 解压 + charset 转码：Transport 已关闭自动解压（保留原始 Content-Encoding），
+	// 这里统一按 Content-Encoding 解压 gzip/deflate/br，再按 charset 转 UTF-8。
 	decoded := decodeResponseBody(data, resp.Header)
 
 	out := &model.Response{
@@ -154,12 +158,12 @@ func (h *HTTPClient) DoRequest(step *model.Step, method, rawURL string, headers,
 		Body:       decoded,
 		Text:       string(decoded),
 	}
+	if out.Headers == nil {
+		out.Headers = map[string][]string{}
+	}
 	// Transfer-Encoding 由 net/http 放在 resp.TransferEncoding，不在 resp.Header，
 	// 补进展示用 Header，避免调试面板看不到 chunked 等分块传输标记。
 	if len(resp.TransferEncoding) > 0 {
-		if out.Headers == nil {
-			out.Headers = map[string][]string{}
-		}
 		if _, exists := out.Headers["Transfer-Encoding"]; !exists {
 			out.Headers["Transfer-Encoding"] = []string{strings.Join(resp.TransferEncoding, ", ")}
 		}

@@ -82,6 +82,41 @@ func TestDebug_GzipWithExplicitAcceptEncoding(t *testing.T) {
 	}
 }
 
+// 端到端：默认请求（不显式设 Accept-Encoding），服务端返回 gzip。验证 Transport
+// 关闭自动解压后，展示头保留 Content-Encoding: gzip，且 body 由 decodeResponseBody
+// 解压为可读中文（回归：此前 Go 自动解压会抹掉该头）。
+func TestDebug_ContentEncodingVisibleWithGzipResponse(t *testing.T) {
+	raw := "自动解压的中文响应"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Encoding", "gzip")
+		zw := gzip.NewWriter(w)
+		zw.Write([]byte(raw))
+		zw.Close()
+	}))
+	defer srv.Close()
+
+	client := NewHTTPClient(2*time.Second, false)
+	resp, err := client.DoRequest(&model.Step{}, "GET", srv.URL, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// body 必须已被解压为可读文本
+	if resp.Text != raw {
+		t.Fatalf("auto-decompressed body = %q, want %q", resp.Text, raw)
+	}
+	// 展示头必须含 Content-Encoding: gzip
+	var found bool
+	for _, kv := range resp.Headers["Content-Encoding"] {
+		if strings.EqualFold(strings.TrimSpace(kv), "gzip") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Content-Encoding gzip not visible after auto-decompress: %#v", resp.Headers)
+	}
+}
+
 // 端到端：服务端以 chunked 分块传输，验证 Transfer-Encoding 头展示出来。
 func TestDebug_ChunkedHeaderVisible(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
