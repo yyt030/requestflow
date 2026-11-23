@@ -53,8 +53,9 @@ type KV struct {
 type DebugResult struct {
 	OK         bool
 	Err        string
+	Protocol   string // http（默认，空串也按 http）| tcp
 	Method     string
-	URL        string // 渲染后的实际请求 URL（含 query）
+	URL        string // 渲染后的实际请求 URL（含 query）；TCP 时为 host:port
 	StatusCode int
 	StatusText string
 	DurationMS int64
@@ -66,6 +67,11 @@ type DebugResult struct {
 	IsJSON     bool
 	Curl       string
 	Snippets   map[string]string // 代码生成：python / go / javascript / curl
+
+	// TCP 单步调试专用字段
+	Sent        []byte // 实际发送的字节（用于十六进制展示）
+	ReceivedRaw []byte // 原始接收字节（二进制响应时避免 string() 破坏）
+	IsBinary    bool   // 响应含不可打印字节时以十六进制展示
 }
 
 // Debug 执行一次调试请求。vars 用于 {{变量}} 渲染，通常传场景全局变量（含 baseUrl）。

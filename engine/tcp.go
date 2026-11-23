@@ -54,12 +54,14 @@ func (f frameSpec) headSize() int {
 
 // parseFrameSpec 从步骤解析帧头规格。
 // 兼容旧场景：未配置 tcpFrameType 但配置了 tcpFrameHead 位数时，按 ascii 处理。
-
-// parseFrameSpec 从步骤解析帧头规格。
-// 兼容旧场景：未配置 tcpFrameType 但配置了 tcpFrameHead 位数时，按 ascii 处理。
 func (e *Engine) parseFrameSpec(step model.Step) frameSpec {
-	typ := strings.ToLower(strings.TrimSpace(e.ctx.Render(step.TCPFrameType)))
-	digits, _ := strconv.Atoi(strings.TrimSpace(e.ctx.Render(step.TCPFrameHead)))
+	return parseFrameSpecWith(e.ctx, step)
+}
+
+// parseFrameSpecWith 从步骤和变量上下文解析帧头规格，供场景执行与单步调试共用。
+func parseFrameSpecWith(ctx *Context, step model.Step) frameSpec {
+	typ := strings.ToLower(strings.TrimSpace(ctx.Render(step.TCPFrameType)))
+	digits, _ := strconv.Atoi(strings.TrimSpace(ctx.Render(step.TCPFrameHead)))
 
 	switch typ {
 	case "ascii", "ascii8", "string", "string8":
@@ -70,7 +72,7 @@ func (e *Engine) parseFrameSpec(step model.Step) frameSpec {
 	case "bin1", "binary1", "byte":
 		return frameSpec{kind: "bin1"}
 	case "bin2", "binary2", "binary":
-		endian := strings.ToLower(strings.TrimSpace(e.ctx.Render(step.TCPFrameEndian)))
+		endian := strings.ToLower(strings.TrimSpace(ctx.Render(step.TCPFrameEndian)))
 		return frameSpec{kind: "bin2", bigEnd: endian != "little"}
 	default:
 		// 旧场景：仅配置位数即视为 ascii 头
@@ -80,21 +82,6 @@ func (e *Engine) parseFrameSpec(step model.Step) frameSpec {
 		return frameSpec{}
 	}
 }
-
-// runTCPStep 执行一个 TCP Socket 步骤。
-// 连接模式：
-//   - short（默认）：每步新建连接，结束即关闭，兼容旧场景。
-//   - long：按 TCPConnKey 跨步骤共享同一 socket，场景结束统一关闭。
-//
-// TCPClose=true 时关闭指定连接而不发送数据。
-//
-// 帧协议（send/read 的 frame 模式，帧头类型界面可选）：
-//   - ascii（默认）：N 位十进制字符串长度头，位数自定义（3/5/8 等），左补零，如 8 位头 + 8 字节报文 → "0000000888888888"。
-//   - bin1：1 字节二进制长度头，最大 255 字节报文。
-//   - bin2：2 字节二进制长度头，最大 65535（64K-1）字节；字节序 big（默认，网络序）/ little。
-//
-// TCPKeepAlive > 0 时开启底层 keepalive 并设为该秒数探测周期；0/空时显式关闭（覆盖 Go 默认开启行为）。
-// 响应的提取/断言逻辑与 HTTP 步骤完全复用，status=200 表示成功。
 
 // runTCPStep 执行一个 TCP Socket 步骤。
 // 连接模式：
@@ -235,8 +222,6 @@ func (e *Engine) runTCPStep(step model.Step) error {
 	}
 	return nil
 }
-
-// dialTCP 建立一条 TCP（或 TLS）连接。
 
 // dialTCP 建立一条 TCP（或 TLS）连接。
 func dialTCP(host, addr string, timeout time.Duration, useTLS bool) (net.Conn, error) {
