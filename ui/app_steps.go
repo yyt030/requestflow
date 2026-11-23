@@ -187,7 +187,7 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 
 		// 内容区：所有步骤类型统一按当前标签渲染，独立的滚动容器。
 		// 底部加大留白，滚到底时最后一行不被底部状态栏方向截断。
-		ui.Scroll(c).Grow(1).Padding(12, 14, 24, 14).Gap(10).Children(func() {
+		ui.Scroll(c).Grow(1).Padding(12, 14, 40, 14).Gap(10).Children(func() {
 			a.stepTabView(c, t, step, tabs[tab])
 		})
 	})

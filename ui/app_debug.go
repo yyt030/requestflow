@@ -114,9 +114,9 @@ func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 			}
 		})
 		ui.Divider(c)
-		// 底部留白加大：抵消 Selectable 文本末行高度与滚动 clip 的误差，
-		// 滚到底时最后一行（如 JSON 结尾大括号）可完整显示，不被状态栏方向截断。
-		ui.Scroll(c).Grow(1).Padding(10, 12, 24, 12).Children(func() {
+		// 底部留白：抵消 Selectable 文本末行实测高度小于绘制高度的误差，
+		// 保证滚到底时末行（如 JSON 结尾大括号）完整露出、不被底部状态栏压住。
+		ui.Scroll(c).Grow(1).Padding(10, 12, 40, 12).Children(func() {
 			// 代码生成标签：基于最近一次调试请求生成，无需请求成功即可查看。
 			if a.debugView == 3 {
 				a.codeSnippetView(c, t)

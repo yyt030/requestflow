@@ -15,7 +15,7 @@ func (a *App) statusBar(c *ui.Context, t *ui.Theme) {
 	// 主工作区（尤其接口调试响应/结果表这类滚动区）不会延伸进这一行，
 	// 避免返回内容的最后几行被状态栏遮挡。
 	ui.Divider(c)
-	ui.Row(c).Height(30).Padding(0, 12).AlignItems(ui.Center).Background(t.Surface).Children(func() {
+	ui.Row(c).Height(20).Padding(0, 12).AlignItems(ui.Center).Background(t.Surface).Children(func() {
 		status := "就绪"
 		failDetail := ""
 		if a.running {

@@ -54,7 +54,7 @@ func (a *App) logView(c *ui.Context, t *ui.Theme) {
 			a.logs = nil
 		}
 	})
-	ui.Scroll(c).Grow(1).Padding(0, 12, 8, 12).Children(func() {
+	ui.Scroll(c).Grow(1).Padding(0, 12, 24, 12).Children(func() {
 		for _, line := range a.logs {
 			ui.Text(c, line).FontSize(11).SingleLine()
 		}

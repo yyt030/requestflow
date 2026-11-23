@@ -86,7 +86,7 @@ func (a *App) tcpDebugResultView(c *ui.Context, t *ui.Theme, step *model.Step) {
 		label = "响应内容（JSON 已格式化）"
 	}
 	ui.Text(c, label).FontSize(11).Bold()
-	ui.Scroll(c).Grow(1).Height(200).Padding(0, 0, 16, 0).Children(func() {
+	ui.Scroll(c).Grow(1).Height(200).Padding(0, 0, 32, 0).Children(func() {
 		ui.Text(c, res.Formatted).FontSize(11).Selectable()
 	})
 }
