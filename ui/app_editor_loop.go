@@ -27,4 +27,6 @@ func (a *App) editorProcess(c *ui.Context, t *ui.Theme, step *model.Step) {
 	names := collectVarNames(a.scenario)
 	fieldHint(c, t, varSummary(names))
 	a.renderProcessForm(c, t, step, a.processFormRawOpen(step), names)
+	// 实时预览：复用最近响应提取的变量，自动展示处理结果（含默认例子）。
+	a.processPreview(c, t, step)
 }

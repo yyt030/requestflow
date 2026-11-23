@@ -73,6 +73,8 @@ func (a *App) editorExtract(c *ui.Context, t *ui.Theme, step *model.Step) {
 			}
 		})
 	}
+	// 实时预览：复用最近调试响应，自动展示提取结果（含默认例子）。
+	a.extractPreview(c, t, step)
 }
 
 // editorCSSFields 配置 cssRows 的行内子字段：每行一个字段名 + 行内选择器 + 取值方式(+属性名/+resolve)。
