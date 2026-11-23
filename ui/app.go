@@ -214,23 +214,8 @@ func (a *App) view(c *ui.Context) {
 	ui.Column(c).Fill().Children(func() {
 		a.toolbar(c, t)
 		ui.Split(c, &a.splitSide, func() { a.sidebar(c, t) }, func() {
-			ui.Column(c).Fill().Children(func() {
-				// Postman 风格：主工作区用标签切换「编排 / 调试 / 运行结果」。
-				ui.Row(c).Padding(6, 12, 0, 12).Children(func() {
-					ui.Tabs(c, &a.mainTab, "步骤编排", "接口调试", "运行结果")
-				})
-				ui.Divider(c)
-				switch a.mainTab {
-				case 1:
-					a.debugPanel(c, t)
-				case 2:
-					a.consoleOnly(c, t)
-				default:
-					a.editor(c, t)
-				}
-			})
+			a.mainArea(c, t)
 		}).Grow(1)
-		a.statusBar(c, t)
 		// 新建场景向导：以 Modal 覆盖窗口，选择模板或空白场景。
 		ui.Modal(c, &a.showTemplateWizard, func() {
 			a.templateWizard(c, t)
