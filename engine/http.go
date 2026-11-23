@@ -144,11 +144,25 @@ func (h *HTTPClient) DoRequest(step *model.Step, method, rawURL string, headers,
 		return nil, err
 	}
 
+	// 解压 + charset 转码：Go 传输层仅在未显式设置 Accept-Encoding 时自动解压
+	// gzip；用户从浏览器粘贴 Accept-Encoding 或服务端返回 br/GBK 时需在此兜底。
+	decoded := decodeResponseBody(data, resp.Header)
+
 	out := &model.Response{
 		StatusCode: resp.StatusCode,
 		Headers:    resp.Header,
-		Body:       data,
-		Text:       string(data),
+		Body:       decoded,
+		Text:       string(decoded),
+	}
+	// Transfer-Encoding 由 net/http 放在 resp.TransferEncoding，不在 resp.Header，
+	// 补进展示用 Header，避免调试面板看不到 chunked 等分块传输标记。
+	if len(resp.TransferEncoding) > 0 {
+		if out.Headers == nil {
+			out.Headers = map[string][]string{}
+		}
+		if _, exists := out.Headers["Transfer-Encoding"]; !exists {
+			out.Headers["Transfer-Encoding"] = []string{strings.Join(resp.TransferEncoding, ", ")}
+		}
 	}
 	for _, c := range resp.Cookies() {
 		out.Cookies = append(out.Cookies, &model.HTTPCookie{Name: c.Name, Value: c.Value})

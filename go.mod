@@ -4,11 +4,14 @@ go 1.27.3
 
 require (
 	github.com/PuerkitoBio/goquery v1.10.3
+	github.com/andybalholm/brotli v1.3.0
 	github.com/dop251/goja v0.0.0-20261110204830-f493a2b600d6
 	github.com/egoist/mygo v0.9.1
 	github.com/tidwall/gjson v1.20.3
 	github.com/xuri/excelize/v2 v2.11.1
 	go.starlark.net v0.0.0-20261021141710-4f4267fb140d
+	golang.org/x/net v0.62.0
+	golang.org/x/text v0.43.0
 )
 
 require (
@@ -27,7 +30,5 @@ require (
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/image v0.46.0 // indirect
-	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
 )

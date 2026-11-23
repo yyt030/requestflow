@@ -100,7 +100,7 @@ type App struct {
 	debugGrantType    string // client_credentials | password
 	debugTimeout      string
 	debugInsecure     bool
-	debugView         int // 0=美化响应 1=响应头 2=Cookie 3=cURL
+	debugView         int // 0=响应体 1=响应头 2=Cookie 3=代码（代码内含 curl 片段）
 	debugReqTab       int // 0=Params 1=Headers 2=Body 3=Auth（Postman 风格子标签）
 	debugResult       *engine.DebugResult
 	debugSending      bool

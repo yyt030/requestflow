@@ -89,7 +89,12 @@ func (a *App) debugRequestArea(c *ui.Context, t *ui.Theme) {
 func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Fill().Children(func() {
 		ui.Row(c).Padding(8, 12).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Segmented(c, &a.debugView, "Body", "Headers", "Cookies", "cURL", "代码")
+			ui.Segmented(c, &a.debugView, "Body", "Headers", "Cookies", "代码")
+			if a.debugResult != nil && a.debugResult.OK && a.debugView < 3 {
+				if ui.Button(c, "⧉ 复制").Tooltip("复制当前标签内容到剪贴板").Clicked() {
+					a.copyDebugResponse()
+				}
+			}
 			ui.Spacer(c)
 			if a.debugSending {
 				ui.Text(c, "发送中…").FontSize(11).TextColor(t.Accent)
@@ -111,7 +116,7 @@ func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 		ui.Divider(c)
 		ui.Scroll(c).Grow(1).Padding(10, 12, 10, 12).Children(func() {
 			// 代码生成标签：基于最近一次调试请求生成，无需请求成功即可查看。
-			if a.debugView == 4 {
+			if a.debugView == 3 {
 				a.codeSnippetView(c, t)
 				return
 			}
@@ -145,8 +150,6 @@ func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 				for _, kv := range res.Cookies {
 					ui.Text(c, kv.Key+" = "+kv.Value).FontSize(11)
 				}
-			case 3: // cURL
-				ui.Text(c, res.Curl).FontSize(11)
 			default: // 响应体
 				ui.Text(c, res.Formatted).FontSize(11)
 			}
