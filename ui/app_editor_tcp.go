@@ -37,10 +37,36 @@ func tcpFrameTypeValue(label string) string {
 	}
 }
 
-// editorTCP TCP Socket 步骤配置：连接参数、长短连接、帧头类型、发送数据、读取策略、提取与断言。
+// tcpTabView 按 Postman 风格标签渲染 TCP 步骤的单个配置维度。
+func (a *App) tcpTabView(c *ui.Context, t *ui.Theme, step *model.Step, tab string) {
+	switch tab {
+	case "常规":
+		a.tcpConnView(c, t, step)
+	case "帧头":
+		a.tcpFrameView(c, t, step)
+	case "发送":
+		a.tcpSendView(c, t, step)
+	case "读取":
+		a.tcpReadView(c, t, step)
+	case "提取":
+		a.editorExtract(c, t, step)
+	case "断言":
+		a.editorAssertList(c, t, step)
+	case "脚本":
+		a.editorRequestScripts(c, t, step)
+	case "调试":
+		ui.Text(c, "单步调试").FontSize(12).Bold()
+		fieldHint(c, t, "独立于场景运行，按当前配置连一次、发一次、收一次并展示结果，不影响场景状态。")
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			if ui.Button(c, "⚡ 试发送此步骤").Clicked() {
+				a.debugTCPStep(step)
+			}
+		})
+		a.tcpDebugResultView(c, t, step)
+	}
+}
 
-// editorTCP TCP Socket 步骤配置：连接参数、长短连接、帧头类型、发送数据、读取策略、提取与断言。
-func (a *App) editorTCP(c *ui.Context, t *ui.Theme, step *model.Step) {
+func (a *App) tcpConnView(c *ui.Context, t *ui.Theme, step *model.Step) {
 	ui.Text(c, "连接目标").FontSize(12).Bold()
 	fieldHint(c, t, "连接 TCP 服务端。主机与端口支持 {{变量}}；如需 TLS 加密勾选 TLS。keepalive 填探测周期秒数（如 30），0=关闭（默认）。")
 	ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
@@ -65,10 +91,11 @@ func (a *App) editorTCP(c *ui.Context, t *ui.Theme, step *model.Step) {
 		ui.TextInput(c, &step.TCPConnKey).Placeholder("留空为默认连接").Grow(1).Label("连接名 (long 复用键)")
 		ui.Checkbox(c, &step.TCPClose, "关闭连接")
 	})
+}
 
-	ui.Divider(c)
-	ui.Text(c, "帧头类型（发送/读取选 frame 时生效）").FontSize(12).Bold()
-	fieldHint(c, t, "字符串头：位数可自定义（如 3/5/8），十进制长度字面值不足左补零，如 8 位头+8 字节报文→00000008。1 字节二进制头：最大 255 字节。2 字节二进制头：最大 65535 字节（64K-1），可切换字节序。")
+func (a *App) tcpFrameView(c *ui.Context, t *ui.Theme, step *model.Step) {
+	ui.Text(c, "帧头类型").FontSize(12).Bold()
+	fieldHint(c, t, "字符串头：位数可自定义（如 3/5/8），十进制长度字面值不足左补零，如 8 位头+8 字节报文→00000008。1 字节二进制头：最大 255 字节。2 字节二进制头：最大 65535 字节（64K-1），可切换字节序。仅在发送/读取选择 frame 模式时生效。")
 	ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
 		ftype := step.TCPFrameType
 		if ftype == "" && strings.TrimSpace(step.TCPFrameHead) != "" {
@@ -98,10 +125,11 @@ func (a *App) editorTCP(c *ui.Context, t *ui.Theme, step *model.Step) {
 			}
 		}
 	})
+}
 
-	ui.Divider(c)
+func (a *App) tcpSendView(c *ui.Context, t *ui.Theme, step *model.Step) {
 	ui.Text(c, "发送数据").FontSize(12).Bold()
-	fieldHint(c, t, "支持 {{变量}} 与转义 \\n \\r\\n \\t \\xNN。line=末尾补换行；raw=原样；hex=十六进制；frame=按上方所选帧头类型（字符串头位数自定义 / 1 字节 / 2 字节二进制）自动加长度头。")
+	fieldHint(c, t, "支持 {{变量}} 与转义 \\n \\r\\n \\t \\xNN。line=末尾补换行；raw=原样；hex=十六进制；frame=按帧头类型自动加长度头。")
 	ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
 		sendModes := []string{"line", "raw", "hex", "frame"}
 		mode := step.TCPSendMode
@@ -111,14 +139,14 @@ func (a *App) editorTCP(c *ui.Context, t *ui.Theme, step *model.Step) {
 		if ui.Select(c, &mode, sendModes).Label("发送模式").Width(150).Changed() {
 			step.TCPSendMode = mode
 		}
-		ui.Spacer(c)
 	})
 	resizableTextArea(c, t, &step.TCPSend, &a.tcpSendHeight,
 		"例如：{\"cmd\":\"ping\"} 或 HELLO", 56, 400)
+}
 
-	ui.Divider(c)
+func (a *App) tcpReadView(c *ui.Context, t *ui.Theme, step *model.Step) {
 	ui.Text(c, "读取响应").FontSize(12).Bold()
-	fieldHint(c, t, "line=读一行；all=读到连接关闭/超时；fixed=读固定字节；until=读到结束标记；frame=按上方所选帧头类型先读长度头再读定长报文。响应以文本供提取/断言使用。")
+	fieldHint(c, t, "line=读一行；all=读到连接关闭/超时；fixed=读固定字节；until=读到结束标记；frame=按帧头类型先读长度头再读定长报文。响应以文本供提取/断言使用。")
 	ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
 		readModes := []string{"line", "all", "fixed", "until", "frame"}
 		rmode := step.TCPReadMode
@@ -132,9 +160,4 @@ func (a *App) editorTCP(c *ui.Context, t *ui.Theme, step *model.Step) {
 		ui.TextInput(c, &step.TCPUntil).Placeholder("如 \\n 或 >").Grow(1).Label("结束标记 (until)")
 		ui.TextInput(c, &step.TCPTimeout).Placeholder("5000").Grow(1).Label("超时 ms")
 	})
-
-	ui.Divider(c)
-	a.editorRequestScripts(c, t, step)
-	a.editorExtract(c, t, step)
-	a.editorAssertList(c, t, step)
 }

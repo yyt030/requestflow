@@ -74,6 +74,7 @@ type App struct {
 
 	// 主工作区标签：0=步骤编排 1=接口调试 2=运行结果（Postman 风格标签式工作区）
 	mainTab int
+	stepTab int // 步骤编排子标签（接口调试风格），切换步骤时按类型 clamp
 
 	// 接口调试面板
 	showDebug         bool // 兼容旧动作：请求双击时置 true；view 里同步到 mainTab=1
@@ -105,6 +106,7 @@ type App struct {
 	debugResult       *engine.DebugResult
 	debugSending      bool
 	splitDebug        float32
+	tcpDebug          tcpDebugState // TCP 步骤单步调试状态（详见 app_debug_tcp.go）
 
 	// 调试面板文本框高度（可拖拽调整）
 	headersHeight float32

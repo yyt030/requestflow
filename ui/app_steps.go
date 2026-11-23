@@ -156,7 +156,9 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 			return
 		}
 		step := &a.scenario.Steps[a.selectedStep]
-		ui.Scroll(c).Grow(1).Padding(14).Gap(10).Children(func() {
+
+		// 顶部固定区：步骤概览常驻，切标签时不跟随滚动（接口调试风格）。
+		ui.Column(c).Gap(8).Padding(12, 14, 6, 14).Children(func() {
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "步骤配置").FontSize(14).Bold()
 				ui.Text(c, string(step.Type)).FontSize(11).TextColor(t.Accent)
@@ -165,31 +167,24 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 				ui.Checkbox(c, &step.ContinueOnFail, "失败后继续")
 			})
 			ui.TextInput(c, &step.Name).Placeholder("给步骤起个名字，便于识别").Label("步骤名称").Grow(1)
-			ui.Divider(c)
-			switch step.Type {
-			case model.StepRequest:
-				a.editorRequest(c, t, step)
-			case model.StepTCP:
-				a.editorTCP(c, t, step)
-			case model.StepLoop:
-				a.editorLoop(c, t, step)
-			case model.StepBranch:
-				a.editorBranch(c, t, step)
-			case model.StepSwitch:
-				a.editorSwitch(c, t, step)
-			case model.StepParallel:
-				a.editorParallel(c, t, step)
-			case model.StepMerge:
-				a.editorMerge(c, t, step)
-			case model.StepProcess:
-				a.editorProcess(c, t, step)
-			case model.StepScript:
-				a.editorScript(c, t, step)
-			case model.StepAssert:
-				a.editorAssert(c, t, step)
-			case model.StepExport:
-				a.editorExport(c, t, step)
+		})
+
+		// 配置子标签：HTTP 请求步骤像接口调试一样细粒度拆分，其余步骤单标签承载。
+		tabs := stepTabNames(step)
+		tab := clampStepTab(a, step)
+		ui.Row(c).Padding(0, 14).Children(func() {
+			ui.Tabs(c, &a.stepTab, tabs...)
+			ui.Spacer(c)
+			if step.Type == model.StepRequest {
+				ui.Text(c, "支持 {{变量}}").FontSize(10).TextColor(t.TextMuted)
 			}
+		})
+		ui.Divider(c)
+
+		// 内容区：所有步骤类型统一按当前标签渲染，独立的滚动容器。
+		// 底部加大留白，滚到底时最后一行不被底部状态栏方向截断。
+		ui.Scroll(c).Grow(1).Padding(12, 14, 24, 14).Gap(10).Children(func() {
+			a.stepTabView(c, t, step, tabs[tab])
 		})
 	})
 }

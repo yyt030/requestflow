@@ -114,7 +114,9 @@ func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 			}
 		})
 		ui.Divider(c)
-		ui.Scroll(c).Grow(1).Padding(10, 12, 10, 12).Children(func() {
+		// 底部留白加大：抵消 Selectable 文本末行高度与滚动 clip 的误差，
+		// 滚到底时最后一行（如 JSON 结尾大括号）可完整显示，不被状态栏方向截断。
+		ui.Scroll(c).Grow(1).Padding(10, 12, 24, 12).Children(func() {
 			// 代码生成标签：基于最近一次调试请求生成，无需请求成功即可查看。
 			if a.debugView == 3 {
 				a.codeSnippetView(c, t)
@@ -132,27 +134,7 @@ func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 				ui.Text(c, "错误: "+res.Err).FontSize(11).TextColor(t.Danger)
 				return
 			}
-			switch a.debugView {
-			case 1: // 响应头
-				if len(res.Headers) == 0 {
-					ui.Text(c, "（无响应头）").FontSize(11).TextColor(t.TextMuted)
-				}
-				for _, kv := range res.Headers {
-					ui.Row(c).Gap(8).Children(func() {
-						ui.Text(c, kv.Key+":").FontSize(11).Bold().Width(180)
-						ui.Text(c, kv.Value).FontSize(11)
-					})
-				}
-			case 2: // Cookie
-				if len(res.Cookies) == 0 {
-					ui.Text(c, "（无 Cookie）").FontSize(11).TextColor(t.TextMuted)
-				}
-				for _, kv := range res.Cookies {
-					ui.Text(c, kv.Key+" = "+kv.Value).FontSize(11)
-				}
-			default: // 响应体
-				ui.Text(c, res.Formatted).FontSize(11)
-			}
+			a.responseBodyView(c, t, res)
 		})
 	})
 }
