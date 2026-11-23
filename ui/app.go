@@ -76,6 +76,8 @@ type App struct {
 	mainTab int
 	stepTab int // 步骤编排子标签（接口调试风格），切换步骤时按类型 clamp
 
+	tabDirty map[string]string // 标签修改标记：key=步骤ID|标签名, value=已确认内容指纹（详见 app_tab_dirty.go）
+
 	// 接口调试面板
 	showDebug         bool // 兼容旧动作：请求双击时置 true；view 里同步到 mainTab=1
 	debugMethod       string
@@ -159,8 +161,6 @@ type App struct {
 }
 
 // Run 启动 GUI。
-
-// Run 启动 GUI。
 func Run() {
 	app := &App{
 		scenario:         demoScenario(),
@@ -186,6 +186,7 @@ func Run() {
 		showSteps:        true,
 		showVars:         true,
 		varExpanded:      map[string]bool{},
+		tabDirty:         map[string]string{},
 	}
 	app.logs = append(app.logs, "就绪。打开或新建场景，配置步骤后点击【一键运行】。")
 	mygo.App.WhenReady(func() {

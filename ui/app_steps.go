@@ -170,11 +170,15 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 		})
 
 		// 配置子标签：HTTP 请求步骤像接口调试一样细粒度拆分，其余步骤单标签承载。
+		// 内容相对上次确认被改过的标签，名字后带绿色小圆点，便于快速定位改动。
 		tabs := stepTabNames(step)
 		tab := clampStepTab(a, step)
-		ui.Row(c).Padding(0, 14).Children(func() {
-			ui.Tabs(c, &a.stepTab, tabs...)
+		ui.Row(c).Padding(0, 14).AlignItems(ui.Center).Children(func() {
+			dirtyCount := a.tabBarWithDots(c, t, step)
 			ui.Spacer(c)
+			if dirtyCount > 0 {
+				ui.Text(c, "已修改").FontSize(10).TextColor(t.Success)
+			}
 			if step.Type == model.StepRequest {
 				ui.Text(c, "支持 {{变量}}").FontSize(10).TextColor(t.TextMuted)
 			}

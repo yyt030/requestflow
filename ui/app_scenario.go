@@ -27,6 +27,7 @@ func (a *App) applyTemplate(tpl ScenarioTemplate) {
 	a.adding = false
 	a.resetResult()
 	a.showTemplateWizard = false
+	a.refreshTabBaseline()
 	a.log("已从模板新建场景：" + tpl.Name)
 }
 
@@ -82,6 +83,7 @@ func (a *App) applyLoadedScenario(sc *model.Scenario, path string) {
 	a.adding = false
 	a.showImport = false
 	a.resetResult()
+	a.refreshTabBaseline()
 	a.log("已打开: " + path)
 }
 
@@ -109,6 +111,7 @@ func (a *App) saveTo(path string) {
 		mygo.Dialog.Error("保存失败", err.Error())
 		return
 	}
+	a.refreshTabBaseline() // 保存后把当前内容记为基线，清除所有 ● 修改标记
 	a.log("已保存: " + path)
 }
 
