@@ -215,9 +215,9 @@ func (a *App) refreshTabBaseline() {
 	}
 }
 
-// dirtyDotView 在 dirty 标签名后画一个小的绿色圆点，标记该标签内容被改过。
+// dirtyDotView 在 dirty 标签名后画一个绿色圆点，标记该标签内容被改过。
 func dirtyDotView(c *ui.Context, t *ui.Theme) {
-	ui.Text(c, "•").FontSize(9).TextColor(t.Success).Tooltip("此标签内容已修改，未保存")
+	ui.Text(c, "•").FontSize(12).TextColor(t.Success).Tooltip("此标签内容已修改，未保存")
 }
 
 // tabBarWithDots 用 TabsBase 自定义渲染标签栏：选中态保留主题外观，
