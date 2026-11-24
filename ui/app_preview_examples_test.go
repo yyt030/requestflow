@@ -6,8 +6,8 @@ import (
 
 func TestProcessExamplesDataValid(t *testing.T) {
 	exs := processExamplesData()
-	if len(exs) < 7 {
-		t.Fatalf("例子数量应至少 7 个覆盖高频操作，实际 %d", len(exs))
+	if len(exs) < 8 {
+		t.Fatalf("例子数量应至少 8 个覆盖高频操作，实际 %d", len(exs))
 	}
 	ops := map[string]bool{}
 	for _, ex := range exs {
@@ -31,7 +31,7 @@ func TestProcessExamplesDataValid(t *testing.T) {
 
 func TestProcessExamplesRequiredKeys(t *testing.T) {
 	// 关键高频 op 的例子必须带 from（join 除外，它用 values）。
-	needFrom := map[string]bool{"filter": true, "limit": true, "sort": true, "pick": true, "dedup": true}
+	needFrom := map[string]bool{"json_to_table": true, "filter": true, "limit": true, "sort": true, "pick": true, "dedup": true}
 	for _, ex := range processExamplesData() {
 		if needFrom[ex.op] && ex.args["from"] == "" {
 			t.Fatalf("例子 %q (op=%s) 缺少 from 参数", ex.name, ex.op)

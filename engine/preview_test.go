@@ -131,3 +131,36 @@ func TestPreviewCompactText(t *testing.T) {
 		t.Fatalf("数组展示失败: %s", s)
 	}
 }
+
+// TestPreviewJSONListToTable 验证完整链路：从响应 JSON 用 jsonpath 取出 list，
+// 再把提取到的数组变量交给 json_to_table 解析成表格。这是"解析返回报文里的 list"案例的核心。
+func TestPreviewJSONListToTable(t *testing.T) {
+	dr := &DebugResult{
+		StatusCode: 200,
+		Body:       `{"code":0,"data":{"books":[{"title":"活着","rating":9.4},{"title":"平凡的世界","rating":8.8}]}}`,
+		IsJSON:     true,
+	}
+	resp := PreviewResponseFromDebug(dr)
+
+	// 1) 提取 data.books 这个 list。
+	extracts := []model.Extract{{Name: "books", Source: "body", Kind: "jsonpath", Path: "data.books"}}
+	items := PreviewExtracts(extracts, map[string]string{}, resp)
+	if len(items) != 1 || items[0].Err != "" || items[0].Count != 2 {
+		t.Fatalf("提取 data.books 失败: %+v", items)
+	}
+
+	// 2) 把提取结果回填为变量（与 UI previewVars 一致：PreviewValueString）。
+	vars := map[string]string{"books": PreviewValueString(items[0].Value)}
+
+	// 3) json_to_table 解析成表格。
+	r := PreviewProcess(model.Step{Op: "json_to_table", Args: map[string]string{"from": "books", "to": "table"}}, vars)
+	if r.Err != "" {
+		t.Fatalf("json_to_table 解析失败: %s", r.Err)
+	}
+	if !strings.Contains(r.AfterT, "[2 条]") {
+		t.Fatalf("表格应有 2 条，实际: %s", r.AfterT)
+	}
+	if r.OutName != "table" {
+		t.Fatalf("输出变量名 = %q", r.OutName)
+	}
+}

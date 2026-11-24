@@ -432,6 +432,11 @@ JSON 示例（长连接 + 2 字节二进制帧头，两步复用同一 socket）
 
 ## 内置处理（process op）
 
+> **想把返回报文 JSON 里的 list 解析出来？** 数据处理步骤只认变量、不直接读响应报文，标准做法是两步：
+> ① 在 HTTP 请求步骤的「提取」标签用 `jsonpath` 把数组取成变量，如路径填 `data.books`、变量名填 `books`；
+> ② 在数据处理步骤直接用变量 `books`（filter/sort/pick/limit 等都可），或用 `json_to_table`（`from=books to=table`）把它规范成表格。
+> 界面「提取」「处理」标签的**默认例子**已内置这条链路，一键套用后预览会即时显示结果。
+
 | op | 说明 | args |
 |---|---|---|
 | `set` | 设置变量 | `name` `value` |

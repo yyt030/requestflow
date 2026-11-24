@@ -35,7 +35,8 @@ func (a *App) extractExamples(c *ui.Context, t *ui.Theme, step *model.Step) {
 		if ui.Button(c, previewExampleLabel(previewExtract, "JSON Token")).Clicked() {
 			step.Extract = []model.Extract{{Name: "token", Source: "body", Kind: "jsonpath", Path: "data.token"}}
 		}
-		if ui.Button(c, previewExampleLabel(previewExtract, "JSON 数组")).Clicked() {
+		if ui.Button(c, previewExampleLabel(previewExtract, "JSON里的list")).Clicked() {
+			// 把响应 JSON 里的数组（list）提取成变量：jsonpath 填数组所在的路径即可。
 			step.Extract = []model.Extract{{Name: "books", Source: "body", Kind: "jsonpath", Path: "data.books"}}
 		}
 		if ui.Button(c, previewExampleLabel(previewExtract, "CSS 标题+链接")).Clicked() {
@@ -48,7 +49,7 @@ func (a *App) extractExamples(c *ui.Context, t *ui.Theme, step *model.Step) {
 			}}
 		}
 	})
-	fieldHint(c, t, "例子会替换当前提取规则；可继续编辑变量名/表达式，预览实时刷新。JSON 例请先载入示例 JSON 响应，CSS 例请先载入示例 HTML 响应。")
+	fieldHint(c, t, "想把响应 JSON 里的 list 取出来：方式选 jsonpath，路径填数组所在位置（如 data.books），变量名任取（如 books），下游「数据处理」即可用该变量。例子会替换当前规则、预览实时刷新；JSON 例请先载入示例 JSON，CSS 例请先载入示例 HTML。")
 }
 
 // processExample 一个可一键套用的处理例子：点击后同时设置 op 与参数。
@@ -63,6 +64,9 @@ type processExample struct {
 // 后几个用字面量或 books，载入示例响应后均可直接试算出结果。
 func processExamplesData() []processExample {
 	return []processExample{
+		{"解析JSON里的list", "json_to_table", map[string]string{
+			"from": "books", "to": "table"},
+			"把响应里取到的 JSON 数组变量 books 解析成表格 table（先在 HTTP 步骤「提取」标签用 jsonpath 取 data.books）"},
 		{"过滤评分≥9", "filter", map[string]string{
 			"from": "books", "field": "rating", "op": "gte", "value": "9", "to": "top"},
 			"保留 rating≥9 的书，结果写入 top"},
@@ -99,5 +103,5 @@ func (a *App) processExamples(c *ui.Context, t *ui.Theme, step *model.Step) {
 			}
 		}
 	})
-	fieldHint(c, t, "依赖 books 的例子：先用「提取例 · JSON 数组」提取 books，或载入示例响应后预览会自动回填；join 例子不依赖响应。点击例子会替换当前 op 与参数。")
+	fieldHint(c, t, "数据处理只认变量、不直接读响应报文：想解析返回 JSON 里的 list，请先在 HTTP 步骤「提取」标签用 jsonpath（如 data.books）取出成变量 books；本页「解析JSON里的list」会把 books 转成表格。依赖 books 的例子载入示例响应后预览自动回填；join 不依赖响应。点击例子会替换当前 op 与参数。")
 }
