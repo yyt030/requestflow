@@ -62,6 +62,32 @@ func TestDebugTabDirtyLifecycle(t *testing.T) {
 	}
 }
 
+func TestDebugTabDirtyRevert(t *testing.T) {
+	a := &App{debugQuery: "page: 1", debugHeaders: "A: b"}
+	a.refreshDebugTabBaseline()
+
+	// 编辑后变脏。
+	a.debugQuery = "page: 2"
+	if !a.debugTabIsDirty(0) {
+		t.Fatal("编辑 debugQuery 后 Params 应被标记")
+	}
+	// 改回原值 → 圆圈自动消失。
+	a.debugQuery = "page: 1"
+	if a.debugTabIsDirty(0) {
+		t.Fatal("改回原值后 Params 圆圈应自动消失")
+	}
+
+	// 清空到空字符串 → 与初始空基线一致则干净。
+	a.debugBody = "hello"
+	if !a.debugTabIsDirty(2) {
+		t.Fatal("填入 Body 后应被标记")
+	}
+	a.debugBody = ""
+	if a.debugTabIsDirty(2) {
+		t.Fatal("清空 Body 后圆圈应自动消失")
+	}
+}
+
 func TestDebugTabDirtyUnchangedAcrossLoad(t *testing.T) {
 	step := &model.Step{Method: "POST", URL: "/x", Query: map[string]string{"a": "1"}, Headers: map[string]string{"H": "v"}}
 	a := &App{}

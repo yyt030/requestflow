@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"encoding/json"
-
 	"github.com/egoist/mygo/ui"
 )
 
@@ -28,8 +26,7 @@ func debugTabFingerprint(a *App, tab int) string {
 			a.debugKeyName, a.debugKeyValue, a.debugKeyIn,
 			a.debugTokenURL, a.debugClientID, a.debugClientSecret, a.debugScope, a.debugGrantType}
 	}
-	b, _ := json.Marshal(v)
-	return string(b)
+	return canonicalFingerprint(v)
 }
 
 // debugTabIsDirty 判断某个调试请求子标签相对基线是否被改过。

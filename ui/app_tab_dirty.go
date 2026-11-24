@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -8,6 +9,43 @@ import (
 
 	"requestflow/model"
 )
+
+// canonicalFingerprint 把字段快照序列化为"语义指纹"：空的 map/slice/对象统一归一为 null。
+// 目的：让"从没填过"(nil) 与"填了又清空"(空容器) 得到相同指纹，撤销编辑后圆圈能自动消失。
+// 用 json.Number 保留数字原始文本，避免 float64 精度问题。
+func canonicalFingerprint(v any) string {
+	raw, _ := json.Marshal(v)
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var node any
+	_ = dec.Decode(&node)
+	out, _ := json.Marshal(normalizeEmpty(node))
+	return string(out)
+}
+
+// normalizeEmpty 递归把空 map / 空数组归一为 nil，非空容器保留并递归处理子元素。
+func normalizeEmpty(n any) any {
+	switch x := n.(type) {
+	case map[string]any:
+		if len(x) == 0 {
+			return nil
+		}
+		for k, v := range x {
+			x[k] = normalizeEmpty(v)
+		}
+		return x
+	case []any:
+		if len(x) == 0 {
+			return nil
+		}
+		for i, v := range x {
+			x[i] = normalizeEmpty(v)
+		}
+		return x
+	default:
+		return n
+	}
+}
 
 // 标签修改标记：为每个步骤的每个配置标签维护一份"已确认内容指纹"。
 // 渲染标签栏时，把当前内容指纹与基线对比，不同则在标签名后加 ● 标记，
@@ -25,9 +63,7 @@ func tabKey(step *model.Step, tab string) string {
 // tabFingerprint 把某个标签涉及的字段序列化为指纹字符串。
 // 字段按标签维度选取，改了哪块的字段，哪块的指纹就变。
 func tabFingerprint(step *model.Step, tab string) string {
-	v := tabFields(step, tab)
-	b, _ := json.Marshal(v)
-	return string(b)
+	return canonicalFingerprint(tabFields(step, tab))
 }
 
 // tabFields 返回标签对应的字段快照。用 []any 保序，json.Marshal 稳定。
