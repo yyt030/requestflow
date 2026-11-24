@@ -80,14 +80,14 @@ func (a *App) requestTabView(c *ui.Context, t *ui.Theme, step *model.Step, tab s
 	case "Params":
 		ui.Text(c, "查询参数 Query").FontSize(12).Bold()
 		fieldHint(c, t, "每行 key: value，如 page: {{page}}，自动拼到 URL；支持 {{变量名}}。")
-		queryText := mapToString(step.Query)
+		queryText := mapToColonString(step.Query)
 		if ui.TextArea(c, &queryText).Height(160).Changed() {
 			step.Query = stringToMap(queryText, ":")
 		}
 	case "Headers":
 		ui.Text(c, "请求头 Headers").FontSize(12).Bold()
 		fieldHint(c, t, "每行 key: value，可直接粘贴 Chrome 复制的请求头；支持 {{变量}}。")
-		headerText := mapToString(step.Headers)
+		headerText := mapToColonString(step.Headers)
 		if ui.TextArea(c, &headerText).Height(160).Changed() {
 			step.Headers = stringToMap(headerText, ":")
 		}

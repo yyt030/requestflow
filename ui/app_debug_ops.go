@@ -83,8 +83,8 @@ func (a *App) loadStepToDebug(step *model.Step) {
 		a.debugMethod = "GET"
 	}
 	a.debugURL = step.URL
-	a.debugHeaders = mapToString(step.Headers)
-	a.debugQuery = mapToString(step.Query)
+	a.debugHeaders = mapToColonString(step.Headers)
+	a.debugQuery = mapToColonString(step.Query)
 	a.debugBody = step.Body
 	a.debugBodyType = step.BodyType
 	if a.debugBodyType == "" {

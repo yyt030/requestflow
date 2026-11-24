@@ -109,6 +109,28 @@ func mapToString(m map[string]string) string {
 	return b.String()
 }
 
+// mapToColonString 与 mapToString 相同，但输出 "key: value"（HTTP 头/查询参数的标准写法，
+// 也是 Chrome DevTools「Copy request headers」的格式）。用于步骤编排与调试面板，
+// 让显示格式与界面提示、外部工具一致——避免复制出去后因 " = " 格式导致发送失败。
+// stringToMap 对 ":" 与 "=" 都能解析，故不影响发送时的还原。
+func mapToColonString(m map[string]string) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for i, k := range keys {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(k)
+		b.WriteString(": ")
+		b.WriteString(m[k])
+	}
+	return b.String()
+}
+
 // stringToMap 把多行文本解析为 key→value，兼容两种写法：
 //   - "key: value"（界面提示格式，也是 Chrome DevTools「Copy request headers」的格式）
 //   - "key = value"（mapToString 的输出格式）

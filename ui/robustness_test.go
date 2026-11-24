@@ -128,9 +128,9 @@ func TestOpenStepDebugRequest(t *testing.T) {
 	if a.debugMethod != "POST" || a.debugURL != step.URL || a.debugBody != step.Body {
 		t.Fatalf("调试参数未正确载入: method=%q url=%q body=%q", a.debugMethod, a.debugURL, a.debugBody)
 	}
-	if !strings.Contains(a.debugHeaders, "Content-Type = application/json") ||
-		!strings.Contains(a.debugQuery, "page = 2") {
-		t.Fatalf("调试 Header/Query 未载入: %q %q", a.debugHeaders, a.debugQuery)
+	if !strings.Contains(a.debugHeaders, "Content-Type: application/json") ||
+		!strings.Contains(a.debugQuery, "page: 2") {
+		t.Fatalf("调试 Header/Query 未载入（应为冒号格式）: %q %q", a.debugHeaders, a.debugQuery)
 	}
 	if a.debugResult != nil {
 		t.Fatal("仅载入不应自动发送请求（debugResult 应为空）")

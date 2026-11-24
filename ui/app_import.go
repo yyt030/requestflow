@@ -140,7 +140,7 @@ func (a *App) historyPanel(c *ui.Context, t *ui.Theme) {
 func (a *App) loadHistoryToDebug(e history.Entry) {
 	a.debugMethod = e.Method
 	a.debugURL = e.URL
-	a.debugHeaders = mapToString(e.Headers)
+	a.debugHeaders = mapToColonString(e.Headers)
 	a.debugBodyType = e.BodyType
 	if e.BodyType == "" {
 		a.debugBodyType = "raw"
