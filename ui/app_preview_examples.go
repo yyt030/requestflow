@@ -51,26 +51,53 @@ func (a *App) extractExamples(c *ui.Context, t *ui.Theme, step *model.Step) {
 	fieldHint(c, t, "例子会替换当前提取规则；可继续编辑变量名/表达式，预览实时刷新。JSON 例请先载入示例 JSON 响应，CSS 例请先载入示例 HTML 响应。")
 }
 
-// processExamples 提供与示例响应配套的处理例子：filter 过滤评分、row 组装结果行。
+// processExample 一个可一键套用的处理例子：点击后同时设置 op 与参数。
+type processExample struct {
+	name string
+	op   string
+	args map[string]string
+	desc string
+}
+
+// processExamplesData 覆盖最常用的处理操作。前 3 个依赖 books 变量，
+// 后几个用字面量或 books，载入示例响应后均可直接试算出结果。
+func processExamplesData() []processExample {
+	return []processExample{
+		{"过滤评分≥9", "filter", map[string]string{
+			"from": "books", "field": "rating", "op": "gte", "value": "9", "to": "top"},
+			"保留 rating≥9 的书，结果写入 top"},
+		{"取前3条", "limit", map[string]string{
+			"from": "books", "count": "3", "to": "top"},
+			"截取 books 的前 3 条"},
+		{"按评分排序", "sort", map[string]string{
+			"from": "books", "field": "rating", "order": "desc", "to": "sorted"},
+			"按 rating 从高到低排序，结果写入 sorted"},
+		{"只取标题和链接", "pick", map[string]string{
+			"from": "books", "fields": "title,url", "to": "picked"},
+			"每条只保留 title 和 url 两个字段"},
+		{"按标题去重", "dedup", map[string]string{
+			"from": "books", "field": "title", "to": "deduped", "stat": "dupCount"},
+			"按 title 去重，重复数写入 dupCount"},
+		{"拼成一行标题", "join", map[string]string{
+			"values": "活着,许三观卖血记,平凡的世界", "sep": " / ", "to": "titleLine"},
+			"把多个值用分隔符拼成字符串（不依赖响应）"},
+		{"组装结果行", "row", map[string]string{
+			"fields": "title,rating", "title": "{{item.title}}", "rating": "{{item.rating}}", "to": "final"},
+			"循环内把多字段组装成一行对象（item 用首个数组元素试算）"},
+	}
+}
+
+// processExamples 渲染一键套用的处理例子。用 Wrap 自动换行，避免按钮过多挤在一行。
 func (a *App) processExamples(c *ui.Context, t *ui.Theme, step *model.Step) {
-	ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Gap(6).Wrap().AlignItems(ui.Center).Children(func() {
 		ui.Text(c, "默认例子").FontSize(10).TextColor(t.TextMuted)
-		if ui.Button(c, previewExampleLabel(previewProcess, "过滤评分≥9")).Clicked() {
-			step.Op = "filter"
-			step.Args = map[string]string{
-				"from": "books", "field": "rating", "op": "gte", "value": "9", "to": "top",
-			}
-		}
-		if ui.Button(c, previewExampleLabel(previewProcess, "取前3条")).Clicked() {
-			step.Op = "limit"
-			step.Args = map[string]string{"from": "books", "count": "3", "to": "top"}
-		}
-		if ui.Button(c, previewExampleLabel(previewProcess, "组装结果行")).Clicked() {
-			step.Op = "row"
-			step.Args = map[string]string{
-				"fields": "title,rating", "title": "{{item.title}}", "rating": "{{item.rating}}", "to": "final",
+		for _, ex := range processExamplesData() {
+			ex := ex
+			if ui.Button(c, previewExampleLabel(previewProcess, ex.name)).Tooltip(ex.desc).Clicked() {
+				step.Op = ex.op
+				step.Args = ex.args
 			}
 		}
 	})
-	fieldHint(c, t, "处理例依赖来源变量 books：请先用「提取例 · JSON 数组」提取 books，或载入示例响应后预览会自动把提取结果回填为变量。")
+	fieldHint(c, t, "依赖 books 的例子：先用「提取例 · JSON 数组」提取 books，或载入示例响应后预览会自动回填；join 例子不依赖响应。点击例子会替换当前 op 与参数。")
 }

@@ -24,8 +24,9 @@ func (a *App) editorProcess(c *ui.Context, t *ui.Theme, step *model.Step) {
 		}
 		ui.Text(c, procOpLabel(op)).FontSize(11).Bold().TextColor(t.Accent)
 	})
+	// 变量速览：列出当前可用变量及试算值，用户一眼知道「来源变量 from」填什么。
+	a.processVarOverview(c, t, step)
 	names := collectVarNames(a.scenario)
-	fieldHint(c, t, varSummary(names))
 	a.renderProcessForm(c, t, step, a.processFormRawOpen(step), names)
 	// 实时预览：复用最近响应提取的变量，自动展示处理结果（含默认例子）。
 	a.processPreview(c, t, step)
