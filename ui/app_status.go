@@ -70,11 +70,9 @@ func (a *App) selectStepNoSync(i int) {
 	a.selectedStep = i
 }
 
-// openStepDebug 双击步骤时进入调试：HTTP 请求步骤载入调试面板供查看/编辑/发送；
-// 其它类型保持选中并在右侧显示其配置详情，同时给出说明。
+// openStepDebug 双击步骤：HTTP 请求步骤同步配置为调试快照（编排区下方即可发送看响应）；
+// 其它类型保持选中并在右侧显示配置详情。接口调试已合并进编排，不再跳转主标签。
 
-// openStepDebug 双击步骤时进入调试：HTTP 请求步骤载入调试面板供查看/编辑/发送；
-// 其它类型保持选中并在右侧显示其配置详情，同时给出说明。
 func (a *App) openStepDebug(i int) {
 	if i < 0 || i >= len(a.scenario.Steps) {
 		return
@@ -82,10 +80,10 @@ func (a *App) openStepDebug(i int) {
 	step := &a.scenario.Steps[i]
 	if step.Type == model.StepRequest {
 		a.loadStepToDebug(step)
-		a.log("已载入调试: " + a.stepLabel(*step) + "（可编辑后点【发送】，不自动请求）")
+		a.mainTab = 0
+		a.log("已选中 " + a.stepLabel(*step) + "，可在下方直接【发送】调试")
 	} else {
 		a.mainTab = 0
-		a.showDebug = false
 		a.log("已选中 " + a.stepLabel(*step) + "，配置详情显示在右侧编辑区")
 	}
 }

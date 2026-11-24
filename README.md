@@ -9,7 +9,7 @@
 - **可视化配置**：左侧 **Postman 风格 Collections 树**（搜索过滤、类型色圆点兼启停开关、上下排序、删除）；**环境变量分层编辑（全局变量 + 多套环境切换，环境变量覆盖同名全局变量）**；右侧标签工作区按步骤类型显示表单。
 - **环境变量分层**：场景可定义多套环境（如 dev/test/prod），每套环境一组变量，顶栏/侧栏下拉一键切换；运行时按「环境变量 > 全局变量」优先级解析。数据驱动时行数据优先级最高。旧场景无 `environments` 时行为不变。
 - **请求级 Pre/Post 脚本（Postman 风格）**：request 步骤可配 `Pre-request Script`（请求发送前执行，改写变量以影响本次 URL/头/体）与 `Tests`（响应提取/断言后执行，`last` 访问响应），支持 JS / Python 双引擎，与独立 script 步骤共用语法。
-- **Postman 风格布局**：顶栏品牌 + 场景 + 操作分组；左侧 Collection 导航树（可搜索）；右侧主工作区用 **步骤编排 / 接口调试 / 运行结果** 三个标签切换；底部状态栏。执行结果采用 **日志 / 结果表 / 变量** 三视图。结果表用原生表格展示提取的数组数据（可选数据源、列排序、刷新）；变量视图列出全部运行时变量。
+- **Postman 风格布局**：顶栏品牌 + 场景 + 操作分组；左侧 Collection 导航树（可搜索）；右侧主工作区用 **步骤编排 / 运行结果** 两个标签切换；底部状态栏。**接口调试已合并进步骤编排**：选中 request 步骤后，上半配置、下半响应，右上角「▶ 发送」直接调试当前步骤，编排中即可随时验证，不再需要在两个面板间来回切换。执行结果采用 **日志 / 结果表 / 变量** 三视图。结果表用原生表格展示提取的数组数据（可选数据源、列排序、刷新）；变量视图列出全部运行时变量。
 - **可配置顺序步骤**：`request / tcp / branch / switch / loop / parallel / merge / process / script / assert / export` 十一种步骤自由编排。
 - **CSS 选择器提取（HTML 抓取）**：extract 支持 `kind:css`，用 CSS 选择器从 HTML 响应提取，**多元素自动合并为数组**，可取文本 / 内部 HTML / 属性值（`text`/`html`/`attr`），自动解码实体与收敛空白。配合 `loop` 翻页 + `process` 累积 + `export`，无需写 JS 即可抓取网页列表（如豆瓣 Top100 片名/导演/评分）。纯 Go 实现，无 cgo。
 - **数组去重与 Base64 编解码**：内置处理新增 `dedup`（数组按整行或按 `field` 字段去重，可选 `stat` 写入重复数）、`base64decode` / `base64encode` **支持数组逐项处理**，解码兼容标准 / URL-safe / 无 padding（可直接解 Bing 跳转链接）。JS（goja）与 Python（Starlark）脚本引擎均注入 Web 标准 `atob` / `btoa`，处理跳转链接无需手写解码函数。
@@ -30,16 +30,16 @@
 - **两种登录态**：Bearer Token 从响应提取到变量后用 `{{token}}` 注入；Cookie 会话由全局 CookieJar 自动跨步骤携带。
 - **循环翻页**：`count`（固定次数）、`foreach`（遍历数组）、`until`（翻到空数据自动停）三种模式，页码变量自动递增。
 - **内置处理 + 自定义脚本**：常用处理逻辑内置；复杂逻辑用脚本直接处理响应，支持 **JavaScript（goja）与 Python（Starlark 子集）双引擎**，编辑器内一键切换。
-- **多格式请求体**：raw（JSON/文本，自动识别 Content-Type）/ form-data（支持文件上传）/ x-www-form-urlencoded / binary（文件路径）/ GraphQL / none 六种 Body 类型，编排步骤与接口调试面板均可配置。
+- **多格式请求体**：raw（JSON/文本，自动识别 Content-Type）/ form-data（支持文件上传）/ x-www-form-urlencoded / binary（文件路径）/ GraphQL / none 六种 Body 类型，在 request 步骤的「Body」标签配置。
 - **完整认证方式**：none / Bearer Token / Basic / **API Key**（请求头或 URL 参数）/ **OAuth 2.0**（client_credentials 与 password 两种授权，自动换 token 并缓存复用）。
 - **数据驱动运行**：用 CSV / JSON 数据文件逐行运行场景，每行数据注入为变量（覆盖同名全局变量），适合参数化批量测试；GUI「⊞ 数据驱动」按钮选文件即跑，CLI 用 `-data`。
 - **测试报告导出**：汇总每步通过/失败、断言明细、耗时与迭代数据，导出 HTML / JSON 报告；GUI「⤓ 报告」按钮，CLI 用 `-report`。
 - **多格式导出**：xlsx / csv / txt / json。
 - **从 Chrome 一键导入 cURL**：DevTools 中右键请求 → Copy as cURL，粘贴后一键解析成请求步骤，自动识别 Bearer Token、Cookie、查询参数与请求体，支持 bash / cmd / PowerShell 三种格式。
 - **导入 Postman / OpenAPI**：导入面板支持整个 API 定义文件——**Postman Collection v2.1**（文件夹递归展开为步骤，保留变量/认证/Body）与 **OpenAPI 3.x / Swagger 2.0**（paths 转请求步骤，server 变量与路径/查询参数转 `{{变量}}`）。自动识别格式，一次导入多步骤场景。
-- **代码生成（Code Snippet）**：接口调试面板响应区「代码」标签，把当前请求（已解析 `{{变量}}`）反向生成 **Python requests / Go net/http / JavaScript fetch / cURL** 四种代码片段，一键复制，便于迁移到脚本或其他工具。
+- **代码生成（Code Snippet）**：编排区调试响应区的「代码」标签，把当前请求（已解析 `{{变量}}`）反向生成 **Python requests / Go net/http / JavaScript fetch / cURL** 四种代码片段，一键复制，便于迁移到脚本或其他工具。
 - **请求历史 History**：每次调试请求自动追加记录到 exe 同目录 `requestflow-history.jsonl`（时间/方法/URL/状态/耗时 + 请求快照）；顶栏「🕘 历史」打开列表，可刷新、清空、载入任一条回调试面板重发。
-- **接口调试**：主工作区「接口调试」标签（或双击 HTTP 请求步骤）打开，采用 Postman 经典布局：请求行（方法色标 + 方法 + URL + 醒目「发送」按钮）+ 配置子标签 **Params / Headers / Body / Authorization**；单独发送请求即时查看响应，无需运行整个场景。响应区分 **Body / Headers / Cookies / cURL** 四视图并带状态码/耗时/字节数概览，JSON 自动美化。request 步骤编辑器里还有「⚡ 试发送此请求」按钮，用当前步骤配置（含 `{{变量}}` 渲染）直接调试；调试响应可一键反向生成 cURL 并导回场景。
+- **接口调试（已合并进步骤编排）**：选中 HTTP 请求步骤（或双击）后，编排区采用 Postman 经典布局：上半是步骤配置子标签 **常规 / Params / Headers / Body / Auth / 提取 / 断言 / 脚本**，右上角「▶ 发送」用当前步骤配置（含 `{{变量}}` 渲染）单独发请求，下半即时查看响应，无需运行整个场景。响应区分 **Body / Headers / Cookies / 代码** 四视图并带状态码/耗时/字节数概览，JSON 自动美化；调试响应可一键反向生成 cURL 并导回场景。请求配置只有步骤这一份数据源——改了就发送，不再有两套配置需要来回同步。历史请求「载入调试」会还原成一个临时 request 步骤供继续调试。
 - **类似自动化测试**：每步可配断言（状态码 / JSONPath / 文本包含 / 变量比较），失败即中止，也可设「失败后继续」。
 - **无界面模式**：`requestflow -run scenario.json` 便于 CI / 命令行跑批。
 - **默认运行日志**：GUI 与无界面模式的日常运行都会自动写日志文件（打开/保存/执行/调试等关键事件），无需手动开启。日志**显式**写入**可执行文件同目录**的 `requestflow.log`（绿色部署，日志与 exe 放一起），不写用户配置目录。可用 `-logdir` 显式指定其它目录。若日志目录不可写会在 stderr 明确报错且界面「ⓘ 版本」对话框提示，不会静默更换位置；该对话框也显示当前日志路径。
@@ -131,7 +131,7 @@ VERSION=v2.0.0 make build # CI 中手动指定版本
 
 **不想手工配请求？** 点工具栏「⇥ 导入 cURL」：在 Chrome 开发者工具 Network 面板右键目标请求 → **Copy → Copy as cURL**，粘贴到面板里点「解析并添加为步骤」。URL、方法、请求头、Cookie、查询参数、请求体自动填好。
 
-**只想调试单个接口？** 切到主工作区「接口调试」标签（或双击编排树里的 HTTP 请求步骤）：请求行是 Postman 风格（方法色标 + 方法选择 + URL + 「▶ 发送」），下方 **Params / Headers / Body / Authorization** 子标签配置请求，下半区即时查看响应，四个标签页分别是**响应体**（JSON 自动美化）、**响应头**、**Cookie**、**cURL**（当前请求反向生成的命令，可一键导回场景）。URL、Header、Body 都支持 `{{变量}}`，自动套用场景环境变量。如果在编排模式下想快速验证某个 request 步骤，可直接在步骤编辑器点「⚡ 试发送此请求」，会自动载入该步骤配置并发起调试。
+**只想调试单个接口？** 在编排树里选中（或双击）HTTP 请求步骤即可——接口调试已合并进「步骤编排」：上半配置、下半响应，右上角的「▶ 发送」用当前步骤配置单独发请求。配置子标签为 **常规 / Params / Headers / Body / Auth / 提取 / 断言 / 脚本**；响应区四个标签页分别是**响应体**（JSON 自动美化）、**响应头**、**Cookie**、**代码**（Python/Go/JS/cURL 片段，可一键导回场景）。URL、Header、Body 都支持 `{{变量}}`，自动套用场景环境变量。配置即步骤本身，改完直接发送，无需在编排与调试之间同步。想临时试一个接口，可点左侧「＋ 新建步骤」加一个 request，或在「⋯ 更多 → 请求历史」里把历史请求还原成临时步骤。
 
 ### 请求体与认证（Postman 风格）
 

@@ -12,6 +12,7 @@ import (
 	"requestflow/engine"
 	"requestflow/history"
 	"requestflow/importer"
+	"requestflow/model"
 )
 
 // importPanel 展示 cURL 粘贴与解析界面。
@@ -136,21 +137,30 @@ func (a *App) historyPanel(c *ui.Context, t *ui.Theme) {
 
 // loadHistoryToDebug 把一条历史记录的请求快照载回调试面板。
 
-// loadHistoryToDebug 把一条历史记录的请求快照载回调试面板。
+// loadHistoryToDebug 把一条历史记录还原为一个临时 request 步骤并选中。
+// 接口调试合并进编排后不再有独立调试面板，历史请求统一落成步骤，配置/发送/响应都在编排区。
 func (a *App) loadHistoryToDebug(e history.Entry) {
-	a.debugMethod = e.Method
-	a.debugURL = e.URL
-	a.debugHeaders = mapToColonString(e.Headers)
-	a.debugBodyType = e.BodyType
-	if e.BodyType == "" {
-		a.debugBodyType = "raw"
+	method := e.Method
+	if method == "" {
+		method = "GET"
 	}
-	a.debugBody = e.Body
+	bodyType := e.BodyType
+	if bodyType == "" {
+		bodyType = "raw"
+	}
+	step := model.Step{
+		ID: newID(), Name: "历史请求 " + e.Time, Type: model.StepRequest, Enabled: true,
+		Method: method, URL: e.URL, Headers: e.Headers,
+		BodyType: bodyType, Body: e.Body,
+	}
+	a.scenario.Steps = append(a.scenario.Steps, step)
+	a.selectedStep = len(a.scenario.Steps) - 1
 	a.showHistory = false
-	a.mainTab = 1
+	a.mainTab = 0
 	a.debugResult = nil
-	a.refreshDebugTabBaseline() // 载入的历史请求作为新的干净基线
-	a.log("已载入历史请求，可编辑后重新发送")
+	a.stepTab = 0
+	a.refreshTabBaseline()
+	a.log("已载入历史请求为临时步骤，可直接编辑并发送")
 }
 
 // importAPIFile 选择 Postman Collection / OpenAPI / Swagger 文件并导入为场景。

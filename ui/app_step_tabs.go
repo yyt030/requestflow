@@ -121,11 +121,6 @@ func (a *App) requestTabView(c *ui.Context, t *ui.Theme, step *model.Step, tab s
 			ui.TextInput(c, &step.URL).Placeholder("{{baseUrl}}/path 或完整 URL").Label("URL").Grow(1)
 			a.varInsertButton(c, t, &step.URL, collectVarNames(a.scenario))
 		})
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			if ui.Button(c, "⚡ 试发送此请求").Clicked() {
-				a.debugStep(step)
-			}
-			ui.Text(c, "用当前步骤配置单独发起调试，不影响场景").FontSize(10).TextColor(t.TextMuted)
-		})
+		fieldHint(c, t, "配置完成后点右上角【▶ 发送】即可调试当前步骤，响应显示在下方。")
 	}
 }

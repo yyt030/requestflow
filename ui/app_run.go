@@ -24,7 +24,7 @@ func (a *App) runDataDriven() {
 	a.dataRunning = true
 	a.dataResults = nil
 	a.resetResult()
-	a.mainTab = 2
+	a.mainTab = 1
 	a.log(fmt.Sprintf("=== 数据驱动开始: %s (%d 行) ===", filepath.Base(a.dataFile), len(rows)))
 	sc := cloneScenario(a.scenario)
 	go func() {

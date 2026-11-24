@@ -158,11 +158,18 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 		step := &a.scenario.Steps[a.selectedStep]
 
 		// 顶部固定区：步骤概览常驻，切标签时不跟随滚动（接口调试风格）。
+		// request 步骤带醒目的【发送】按钮，直接调试当前步骤配置。
+		isReq := step.Type == model.StepRequest
 		ui.Column(c).Gap(8).Padding(12, 14, 6, 14).Children(func() {
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "步骤配置").FontSize(14).Bold()
 				ui.Text(c, string(step.Type)).FontSize(11).TextColor(t.Accent)
 				ui.Spacer(c)
+				if isReq {
+					if ui.PrimaryButton(c, "▶ 发送").Disabled(a.debugSending).Tooltip("用当前步骤配置发送请求，响应显示在下方").Clicked() {
+						a.debugStep(step)
+					}
+				}
 				ui.Checkbox(c, &step.Enabled, "启用")
 				ui.Checkbox(c, &step.ContinueOnFail, "失败后继续")
 			})
@@ -179,17 +186,27 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 			if dirtyCount > 0 {
 				ui.Text(c, "已修改").FontSize(10).TextColor(t.Success)
 			}
-			if step.Type == model.StepRequest {
-				ui.Text(c, "支持 {{变量}}").FontSize(10).TextColor(t.TextMuted)
+			if isReq {
+				ui.Text(c, "支持 {{变量}} · 下方为调试响应").FontSize(10).TextColor(t.TextMuted)
 			}
 		})
 		ui.Divider(c)
 
-		// 内容区：所有步骤类型统一按当前标签渲染，独立的滚动容器。
-		// 底部加大留白，滚到底时最后一行不被底部状态栏方向截断。
-		ui.Scroll(c).Grow(1).Padding(12, 14, 40, 14).Gap(10).Children(func() {
-			a.stepTabView(c, t, step, tabs[tab])
-		})
+		// 内容区：request 步骤用「配置 / 响应」上下分屏，编排中即可直接调试；
+		// 其余步骤保持单一滚动配置区。底部加大留白，避免末行被状态栏截断。
+		if isReq {
+			ui.SplitVertical(c, &a.splitEditorResp, func() {
+				ui.Scroll(c).Grow(1).Padding(12, 14, 24, 14).Gap(10).Children(func() {
+					a.stepTabView(c, t, step, tabs[tab])
+				})
+			}, func() {
+				a.editorResponseArea(c, t)
+			}).Fill()
+		} else {
+			ui.Scroll(c).Grow(1).Padding(12, 14, 40, 14).Gap(10).Children(func() {
+				a.stepTabView(c, t, step, tabs[tab])
+			})
+		}
 	})
 }
 

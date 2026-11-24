@@ -42,9 +42,10 @@ type App struct {
 	editBody   string
 
 	// 步骤列表拖拽
-	listState ui.ListState
-	splitSide float32
-	splitLog  float32
+	listState       ui.ListState
+	splitSide       float32
+	splitLog        float32
+	splitEditorResp float32 // 编排区「配置 / 响应」垂直分屏位置（接口调试合并后）
 
 	// "新建步骤"菜单
 	adding     bool
@@ -79,8 +80,7 @@ type App struct {
 	tabDirty      map[string]string // 步骤标签修改标记：key=步骤ID|标签名, value=已确认内容指纹（详见 app_tab_dirty.go）
 	debugTabDirty map[string]string // 调试请求子标签修改标记：key=标签名, value=已确认内容指纹（详见 app_debug_tabs.go）
 
-	// 接口调试面板
-	showDebug         bool // 兼容旧动作：请求双击时置 true；view 里同步到 mainTab=1
+	// 接口调试面板（调试已合并进步骤编排，debug* 仅存一次发送的快照）
 	debugMethod       string
 	debugURL          string
 	debugHeaders      string // 每行 key: value
@@ -169,6 +169,7 @@ func Run() {
 		splitSide:        280,
 		splitLog:         220,
 		splitDebug:       360,
+		splitEditorResp:  380,
 		debugMethod:      "GET",
 		debugAuthType:    "none",
 		debugBodyType:    "raw",
@@ -208,12 +209,6 @@ func Run() {
 
 func (a *App) view(c *ui.Context) {
 	t := c.Theme()
-	// 兼容旧动作：双击请求步骤会置 showDebug=true，这里同步到调试标签并复位，
-	// 让所有入口（工具栏/双击/原 showDebug 调用）统一由 mainTab 驱动主工作区。
-	if a.showDebug {
-		a.mainTab = 1
-		a.showDebug = false
-	}
 	ui.Column(c).Fill().Children(func() {
 		a.toolbar(c, t)
 		ui.Split(c, &a.splitSide, func() { a.sidebar(c, t) }, func() {

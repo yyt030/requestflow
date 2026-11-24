@@ -74,10 +74,13 @@ func (a *App) doDebugSend() {
 	}()
 }
 
-// loadStepToDebug 把某个 request 步骤载入调试面板（仅填充，不发送），供双击步骤时查看与编辑。
-
-// loadStepToDebug 把某个 request 步骤载入调试面板（仅填充，不发送），供双击步骤时查看与编辑。
-func (a *App) loadStepToDebug(step *model.Step) {
+// syncStepToDebug 把 request 步骤的请求配置同步为一次发送的快照。
+// 合并后 step 是请求配置的唯一数据源：编辑在步骤里完成，发送前用它刷新 debug 快照，
+// 不再维护一份独立的、可编辑的调试配置——从根本上消除"编排/调试割裂"。
+func (a *App) syncStepToDebug(step *model.Step) {
+	if step == nil {
+		return
+	}
 	a.debugMethod = step.Method
 	if a.debugMethod == "" {
 		a.debugMethod = "GET"
@@ -115,10 +118,15 @@ func (a *App) loadStepToDebug(step *model.Step) {
 		a.debugGrantType = "client_credentials"
 	}
 	a.debugTimeout = "30"
-	a.showDebug = true
-	a.debugResult = nil
 	a.debugView = 0
-	a.refreshDebugTabBaseline() // 载入的步骤内容作为新的干净基线
+}
+
+// loadStepToDebug 兼容旧入口：同步步骤配置为调试快照并清空上次响应，用于双击步骤后查看/发送。
+// 不再跳转主标签——编排界面内已内嵌响应区。
+func (a *App) loadStepToDebug(step *model.Step) {
+	a.syncStepToDebug(step)
+	a.debugResult = nil
+	a.refreshDebugTabBaseline()
 }
 
 // debugStep 把某个 request 步骤载入调试面板并立即发送。

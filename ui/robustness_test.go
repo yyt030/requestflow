@@ -107,7 +107,7 @@ type errString string
 
 func (e errString) Error() string { return string(e) }
 
-// ---------- 双击步骤进入调试：request 载入调试面板，其它类型不误入 ----------
+// ---------- 双击步骤：request 同步为调试快照（编排区即可发送），其它类型不误入 ----------
 
 func TestOpenStepDebugRequest(t *testing.T) {
 	a := &App{scenario: model.NewScenario("s"), selectedStep: -1}
@@ -119,18 +119,19 @@ func TestOpenStepDebugRequest(t *testing.T) {
 	step.Headers = map[string]string{"Content-Type": "application/json"}
 	step.Query = map[string]string{"page": "2"}
 	step.Body = `{"u":"x"}`
+	a.mainTab = 1 // 预设在运行结果，双击 request 应回到编排
 
 	a.openStepDebug(0)
 
-	if !a.showDebug {
-		t.Fatal("双击 request 步骤应进入调试面板")
+	if a.mainTab != 0 {
+		t.Fatal("双击 request 步骤应回到步骤编排（调试已合并进编排）")
 	}
 	if a.debugMethod != "POST" || a.debugURL != step.URL || a.debugBody != step.Body {
-		t.Fatalf("调试参数未正确载入: method=%q url=%q body=%q", a.debugMethod, a.debugURL, a.debugBody)
+		t.Fatalf("调试快照未正确同步: method=%q url=%q body=%q", a.debugMethod, a.debugURL, a.debugBody)
 	}
 	if !strings.Contains(a.debugHeaders, "Content-Type: application/json") ||
 		!strings.Contains(a.debugQuery, "page: 2") {
-		t.Fatalf("调试 Header/Query 未载入（应为冒号格式）: %q %q", a.debugHeaders, a.debugQuery)
+		t.Fatalf("调试 Header/Query 未同步（应为冒号格式）: %q %q", a.debugHeaders, a.debugQuery)
 	}
 	if a.debugResult != nil {
 		t.Fatal("仅载入不应自动发送请求（debugResult 应为空）")
@@ -140,12 +141,12 @@ func TestOpenStepDebugRequest(t *testing.T) {
 func TestOpenStepDebugNonRequest(t *testing.T) {
 	a := &App{scenario: model.NewScenario("s"), selectedStep: -1}
 	a.appendStep(model.StepLoop)
-	a.showDebug = true // 预设处于调试视图
+	a.mainTab = 1
 
 	a.openStepDebug(0)
 
-	if a.showDebug {
-		t.Fatal("双击非 request 步骤不应停留在调试面板")
+	if a.mainTab != 0 {
+		t.Fatal("双击非 request 步骤应停留在步骤编排")
 	}
 	if a.selectedStep != 0 {
 		t.Fatalf("双击应选中该步骤, got %d", a.selectedStep)
