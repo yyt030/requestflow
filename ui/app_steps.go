@@ -160,11 +160,12 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 		// 顶部固定区：步骤概览常驻，切标签时不跟随滚动（接口调试风格）。
 		// request 步骤带醒目的【发送】按钮，直接调试当前步骤配置。
 		isReq := step.Type == model.StepRequest
-		ui.Column(c).Gap(8).Padding(12, 14, 6, 14).Children(func() {
-			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "步骤配置").FontSize(14).Bold()
-				ui.Text(c, string(step.Type)).FontSize(11).TextColor(t.Accent)
-				ui.Spacer(c)
+		ui.Column(c).Gap(6).Padding(10, 14, 6, 14).Children(func() {
+			// 步骤配置与名称同一行：标题/类型在左，名称输入自适应占中，操作项靠右，整体紧凑。
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "步骤配置").FontSize(13).Bold()
+				ui.Text(c, string(step.Type)).FontSize(10).TextColor(t.Accent)
+				ui.TextInput(c, &step.Name).Placeholder("步骤名称").Grow(1)
 				if isReq {
 					if ui.PrimaryButton(c, "▶ 发送").Disabled(a.debugSending).Tooltip("用当前步骤配置发送请求，响应显示在下方").Clicked() {
 						a.debugStep(step)
@@ -173,7 +174,6 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 				ui.Checkbox(c, &step.Enabled, "启用")
 				ui.Checkbox(c, &step.ContinueOnFail, "失败后继续")
 			})
-			ui.TextInput(c, &step.Name).Placeholder("给步骤起个名字，便于识别").Label("步骤名称").Grow(1)
 		})
 
 		// 配置子标签：HTTP 请求步骤像接口调试一样细粒度拆分，其余步骤单标签承载。

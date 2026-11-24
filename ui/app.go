@@ -49,6 +49,7 @@ type App struct {
 
 	// "新建步骤"菜单
 	adding     bool
+	sidebarTab int    // 左侧栏标签：0=工作区 1=变量（Postman 风格）
 	stepSearch string // 左侧文件树步骤搜索过滤
 	showSteps  bool   // 文件树"步骤"文件夹节点是否展开
 
@@ -61,8 +62,6 @@ type App struct {
 	resultCopyCol int // 结果表「复制列」选中的列序号，-1=全部
 	// 变量预览（P1）：数组/对象变量的可展开状态，按变量名记录。
 	varExpanded map[string]bool
-	// 变量树展开状态
-	showVars bool
 
 	// cURL 导入面板
 	showImport bool
@@ -185,8 +184,8 @@ func Run() {
 		postScriptHeight: 72,
 		tcpSendHeight:    56,
 		snippetLang:      "python",
+		sidebarTab:       0,
 		showSteps:        true,
-		showVars:         true,
 		varExpanded:      map[string]bool{},
 		tabDirty:         map[string]string{},
 		debugTabDirty:    map[string]string{},

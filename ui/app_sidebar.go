@@ -20,11 +20,21 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 			ui.Spacer(c)
 			ui.Text(c, fmt.Sprintf("%d 项", len(a.scenario.Steps))).FontSize(10).TextColor(t.TextMuted)
 		})
-		// 搜索框：过滤步骤（VSCode 资源管理器的过滤栏）。
+		// 左侧多标签（Postman 风格）：工作区 / 变量。
+		ui.Row(c).Padding(0, 10, 8, 10).Children(func() {
+			ui.Segmented(c, &a.sidebarTab, "工作区", "变量")
+		})
+		if a.sidebarTab == 1 {
+			// 变量标签：环境选择 + 全局变量 + 环境变量 + 变量速查。
+			ui.Scroll(c).Grow(1).Padding(2, 8, 10, 8).Children(func() {
+				a.environmentEditor(c, t)
+			})
+			return
+		}
+		// 工作区标签：搜索框 + 场景工作区（多场景切换）+ 当前场景步骤树。
 		ui.Row(c).Padding(0, 12, 10, 12).Children(func() {
 			ui.SearchField(c, &a.stepSearch).Placeholder("搜索步骤…")
 		})
-		// 树区域：场景工作区（多场景切换）+ 当前场景树（步骤/变量）。
 		ui.Scroll(c).Grow(1).Padding(2, 8, 10, 8).Children(func() {
 			a.workspacePanel(c, t)
 			ui.Box(c).Height(8)
@@ -33,9 +43,9 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 	})
 }
 
-// fileTree 两棵可折叠根节点：场景（步骤）与变量（环境 + 全局变量）。
+// fileTree 当前场景的步骤树：可折叠根节点（场景名 + 重命名入口）+ 步骤列表。
+// 变量区已迁到左侧「变量」标签，工作区标签只保留场景与步骤。
 func (a *App) fileTree(c *ui.Context, t *ui.Theme) {
-	// 根节点：场景名（点击弹出重命名 Modal）+ 步骤子节点。
 	a.treeFolderRow(c, t, "folder-scene", &a.showSteps, iconFolder, brandOrange, func() {
 		a.sceneNameNode(c, t)
 	}, func() {
@@ -45,21 +55,6 @@ func (a *App) fileTree(c *ui.Context, t *ui.Theme) {
 	})
 	if a.showSteps {
 		a.stepList(c, t)
-	}
-
-	ui.Box(c).Height(8)
-
-	// 根节点：变量（环境选择器 + 全局变量 + 当前环境变量）。
-	varCount := len(a.scenario.Variables)
-	if env := a.scenario.EnvVars(a.scenario.ActiveEnv); env != nil {
-		varCount += len(env)
-	}
-	a.treeFolderRow(c, t, "folder-vars", &a.showVars, iconFolder, t.TextMuted, func() {
-		ui.Text(c, "变量").FontSize(11).Bold()
-		ui.Text(c, fmt.Sprintf("(%d)", varCount)).FontSize(10).TextColor(t.TextMuted)
-	}, nil)
-	if a.showVars {
-		a.environmentEditor(c, t)
 	}
 }
 
