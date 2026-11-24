@@ -437,6 +437,23 @@ JSON 示例（长连接 + 2 字节二进制帧头，两步复用同一 socket）
 > ② 在数据处理步骤直接用变量 `books`（filter/sort/pick/limit 等都可），或用 `json_to_table`（`from=books to=table`）把它规范成表格。
 > 界面「提取」「处理」标签的**默认例子**已内置这条链路，一键套用后预览会即时显示结果。
 
+### 案例：复杂 JSON 报文里定位具体记录（header + body + 20 条 list）
+
+响应形如 `{"header":{...},"body":{"list":[{...}, ...20 条]}}` 时，在「提取」标签用 `jsonpath` 按层级写路径即可定位任意记录。**这 7 条已固化成界面「复杂JSON例」一键按钮**，点「载入20条报文」即可实时看结果：
+
+| 想要的数据 | Path | 结果 |
+|---|---|---|
+| 头部字段 | `header.code` | `0` |
+| 记录总数 | `body.list.#` | `20` |
+| 第 3 条（下标从 0）的嵌套字段 | `body.list.2.detail.author` | `"王五"` |
+| 按 id 定位整条记录 | `body.list.#(id==3)#` | 该条完整对象 |
+| 按条件取多条的某字段 | `body.list.#(score>90)#.title` | `["乙","丁","辛","寅","巳","酉"]` |
+| 嵌套字段做条件 | `body.list.#(detail.author=="王五").title` | `"丙"` |
+| 整页 list | `body.list` | 20 条，供下游 filter/sort/pick |
+
+> 关键坑：`#(条件).字段` 只返回**第一条**匹配；要拿全部匹配必须写成 `#(条件)#.字段`。
+> gjson 的 `&&`/`||` 多条件表现不可靠，复杂筛选请用两步链路：先提取 `body.list` 成变量 `rows`，再用「处理」标签的 filter/sort/pick（已固化「复杂JSON例」按钮）。数组元素做条件用下标，如 `body.list.#(tags.0=="a").title`。
+
 | op | 说明 | args |
 |---|---|---|
 | `set` | 设置变量 | `name` `value` |

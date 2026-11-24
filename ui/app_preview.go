@@ -190,12 +190,15 @@ func (a *App) previewEmpty(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Gap(6).Padding(12).Background(t.Surface).Radius(8).Children(func() {
 		ui.Text(c, "还没有可预览的调试响应").FontSize(11).Bold()
 		fieldHint(c, t, "到【接口调试】发送一次请求即可自动预览；也可直接载入内置示例响应体验下面的例子。")
-		ui.Row(c).Gap(8).Children(func() {
+		ui.Row(c).Gap(8).Wrap().Children(func() {
 			if ui.Button(c, "载入示例 JSON 响应").Clicked() {
 				a.loadSampleDebugResponse(true)
 			}
 			if ui.Button(c, "载入示例 HTML 响应").Clicked() {
 				a.loadSampleDebugResponse(false)
+			}
+			if ui.Button(c, "载入复杂 JSON(20条)").Tooltip("header+body+20 条 list，体验「定位具体记录」案例").Clicked() {
+				a.loadComplexSampleDebugResponse()
 			}
 		})
 	})

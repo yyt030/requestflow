@@ -49,7 +49,8 @@ func (a *App) extractExamples(c *ui.Context, t *ui.Theme, step *model.Step) {
 			}}
 		}
 	})
-	fieldHint(c, t, "想把响应 JSON 里的 list 取出来：方式选 jsonpath，路径填数组所在位置（如 data.books），变量名任取（如 books），下游「数据处理」即可用该变量。例子会替换当前规则、预览实时刷新；JSON 例请先载入示例 JSON，CSS 例请先载入示例 HTML。")
+	fieldHint(c, t, "想把响应 JSON 里的 list 取出来：方式选 jsonpath，路径填数组所在位置（如 data.books），变量名任取（如 books），下游「数据处理」即可用该变量。复杂报文（header+body+20 条 list）用下方「复杂JSON例」一键套用。例子会替换当前规则、预览实时刷新；JSON 例请先载入示例 JSON，CSS 例请先载入示例 HTML。")
+	a.complexExtractExamples(c, t, step)
 }
 
 // processExample 一个可一键套用的处理例子：点击后同时设置 op 与参数。
@@ -104,4 +105,14 @@ func (a *App) processExamples(c *ui.Context, t *ui.Theme, step *model.Step) {
 		}
 	})
 	fieldHint(c, t, "数据处理只认变量、不直接读响应报文：想解析返回 JSON 里的 list，请先在 HTTP 步骤「提取」标签用 jsonpath（如 data.books）取出成变量 books；本页「解析JSON里的list」会把 books 转成表格。依赖 books 的例子载入示例响应后预览自动回填；join 不依赖响应。点击例子会替换当前 op 与参数。")
+	ui.Row(c).Gap(6).Wrap().AlignItems(ui.Center).Children(func() {
+		ui.Text(c, "复杂JSON例").FontSize(10).TextColor(t.TextMuted)
+		for _, ex := range complexProcessExamplesData() {
+			ex := ex
+			if ui.Button(c, previewExampleLabel(previewProcess, ex.name)).Tooltip(ex.desc).Clicked() {
+				step.Op = ex.op
+				step.Args = ex.args
+			}
+		}
+	})
 }
