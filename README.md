@@ -56,12 +56,15 @@
   - 若缺库，启动会明确报错（不再静默卡住）
 
 ```bash
-./build.sh                              # 推荐：自动注入版本号构建（见下）
+make build                              # 推荐：自动注入版本号构建（见下）
+make                                    # 等价于 make build
 ./requestflow                           # 启动 GUI
 ./requestflow -software                 # Linux 图形异常时强制软件渲染启动 GUI
 ./requestflow -run scenarios/demo.json  # 无界面运行
 ./requestflow -run s.json -data users.csv -report report.html  # 数据驱动 + 报告
 ./requestflow -version                  # 查看版本号
+# 指定输出路径 / CI 手动指定版本：
+make build BIN=./bin/rf VERSION=v2.0.0
 # 或普通编译（版本号为 dev）：
 go build -o requestflow .
 ```
@@ -73,10 +76,10 @@ go build -o requestflow .
 默认一次打出 **windows/amd64** 与 **linux/amd64** 两个包，各生成可直接分发的 **tar.gz**（含带应用图标的 Windows exe、README、示例场景、使用说明与 SHA256 校验文件）。每次打包会清理 `dist/` 下旧版本产物，只保留本次结果：
 
 ```bash
-./pack.sh                                  # 默认 windows/amd64 + linux/amd64 两个包
-./pack.sh linux/arm64                      # 只打指定平台（可传多个：<goos>/<goarch> ...）
-FORMAT=zip ./pack.sh                       # 改用 zip 格式
-VERSION=v2.0.0 ./pack.sh                   # CI 中手动指定版本号
+make pack                                  # 默认 windows/amd64 + linux/amd64 两个包
+make pack PLATFORMS=linux/arm64            # 只打指定平台（可传多个，空格分隔）
+make pack FORMAT=zip                       # 改用 zip 格式
+make pack VERSION=v2.0.0 OUT=dist          # CI 中手动指定版本/输出目录
 ```
 
 产物在 `dist/`（如 `requestflow-<版本>-windows-amd64.tar.gz`、`requestflow-<版本>-linux-amd64.tar.gz`）；Windows 解压后双击 `requestflow.exe`，Linux 在图形桌面执行 `./requestflow`（GUI 依赖见包内使用说明）。命令行支持 `-run` / `-version`。版本号由 git tag + commit 自动注入，无需 cgo。
@@ -96,9 +99,9 @@ VERSION=v2.0.0 ./pack.sh                   # CI 中手动指定版本号
 打 tag 后构建即为干净版本号；tag 之后有新提交会自动带 `-N-gHASH`；工作区有未提交改动带 `-dirty`。
 
 ```bash
-./build.sh                # 输出 ./requestflow，自动注入上述信息
-./build.sh -o ./bin/rf    # 指定输出路径
-VERSION=v2.0.0 ./build.sh # CI 中手动指定版本
+make build                # 输出 ./requestflow，自动注入上述信息
+make build BIN=./bin/rf   # 指定输出路径
+VERSION=v2.0.0 make build # CI 中手动指定版本
 ```
 
 **查看方式**：
@@ -509,7 +512,6 @@ logger/            默认文件日志（GUI/无界面共用）+ 单元测试
 report/            测试报告：步骤/断言汇总 → HTML/JSON 导出 + 单元测试
 ui/app.go          mygo 原生界面（步骤选中/双击调试/日志落盘/数据驱动/报告导出）
 version/version.go 版本信息（构建期注入）+ 单元测试
-build.sh           自动注入版本号的构建脚本
-pack.sh            打包脚本（默认 windows/amd64 + linux/amd64 双平台，tar.gz + 图标 + sha256，自动清理旧产物）
+Makefile           构建/检查/打包统一入口：build/check/test 等；pack 内联实现双平台打包（tar.gz + 图标 + sha256，自动清理旧产物）
 scenarios/         示例场景
 ```
