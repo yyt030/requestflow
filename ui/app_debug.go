@@ -57,9 +57,13 @@ func (a *App) debugRequestArea(c *ui.Context, t *ui.Theme) {
 			})
 		})
 		// 配置子标签（Postman：Params / Headers / Body / Authorization）。
-		ui.Row(c).Padding(0, 12).Children(func() {
-			ui.Tabs(c, &a.debugReqTab, "Params", "Headers", "Body", "Authorization")
+		// 相对最近载入内容改过的标签，名字后带绿色圆点，便于定位改动。
+		ui.Row(c).Padding(0, 12).AlignItems(ui.Center).Children(func() {
+			dirtyCount := a.debugTabBarWithDots(c, t)
 			ui.Spacer(c)
+			if dirtyCount > 0 {
+				ui.Text(c, "已修改").FontSize(10).TextColor(t.Success)
+			}
 			ui.Text(c, "支持 {{变量}}").FontSize(10).TextColor(t.TextMuted)
 		})
 		ui.Divider(c)

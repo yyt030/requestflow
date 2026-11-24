@@ -149,6 +149,7 @@ func (a *App) loadHistoryToDebug(e history.Entry) {
 	a.showHistory = false
 	a.mainTab = 1
 	a.debugResult = nil
+	a.refreshDebugTabBaseline() // 载入的历史请求作为新的干净基线
 	a.log("已载入历史请求，可编辑后重新发送")
 }
 

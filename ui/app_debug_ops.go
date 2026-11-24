@@ -118,6 +118,7 @@ func (a *App) loadStepToDebug(step *model.Step) {
 	a.showDebug = true
 	a.debugResult = nil
 	a.debugView = 0
+	a.refreshDebugTabBaseline() // 载入的步骤内容作为新的干净基线
 }
 
 // debugStep 把某个 request 步骤载入调试面板并立即发送。

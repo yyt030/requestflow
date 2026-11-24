@@ -76,7 +76,8 @@ type App struct {
 	mainTab int
 	stepTab int // 步骤编排子标签（接口调试风格），切换步骤时按类型 clamp
 
-	tabDirty map[string]string // 标签修改标记：key=步骤ID|标签名, value=已确认内容指纹（详见 app_tab_dirty.go）
+	tabDirty      map[string]string // 步骤标签修改标记：key=步骤ID|标签名, value=已确认内容指纹（详见 app_tab_dirty.go）
+	debugTabDirty map[string]string // 调试请求子标签修改标记：key=标签名, value=已确认内容指纹（详见 app_debug_tabs.go）
 
 	// 接口调试面板
 	showDebug         bool // 兼容旧动作：请求双击时置 true；view 里同步到 mainTab=1
@@ -187,7 +188,9 @@ func Run() {
 		showVars:         true,
 		varExpanded:      map[string]bool{},
 		tabDirty:         map[string]string{},
+		debugTabDirty:    map[string]string{},
 	}
+	app.refreshDebugTabBaseline() // 记录初始调试请求配置为基线
 	app.logs = append(app.logs, "就绪。打开或新建场景，配置步骤后点击【一键运行】。")
 	mygo.App.WhenReady(func() {
 		app.win = mygo.NewWindow(mygo.WindowOptions{
