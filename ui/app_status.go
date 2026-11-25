@@ -15,31 +15,46 @@ func (a *App) statusBar(c *ui.Context, t *ui.Theme) {
 	// 主工作区（尤其接口调试响应/结果表这类滚动区）不会延伸进这一行，
 	// 避免返回内容的最后几行被状态栏遮挡。
 	ui.Divider(c)
-	ui.Row(c).Height(20).Padding(0, 12).AlignItems(ui.Center).Background(t.Surface).Children(func() {
+	ui.Row(c).Height(24).Padding(0, 12).Gap(12).AlignItems(ui.Center).Background(t.Surface).Children(func() {
+		// ── 流程运行进度 ──
 		status := "就绪"
 		failDetail := ""
-		if a.running {
-			status = "运行中…"
+		if a.dataRunning {
+			status = fmt.Sprintf("数据驱动运行中… %d/%d", len(a.dataResults), len(a.dataResults))
+		} else if a.running {
+			status = "流程运行中…"
 		} else if a.lastResult != nil {
 			if a.lastResult.OK {
-				status = fmt.Sprintf("完成 · %d 变量", len(a.lastResult.Vars))
+				status = fmt.Sprintf("✓ 完成 · %d 变量", len(a.lastResult.Vars))
 			} else {
 				failDetail = resultErrText(a.lastResult)
-				status = "失败：" + failDetail
+				status = "✗ 失败：" + failDetail
 			}
 		}
 		if failDetail != "" {
-			// 失败信息可能很长，点击状态栏弹出完整错误详情。
-			if ui.Button(c, truncateRunes(status, 100)).FontSize(10).TextColor(t.Danger).
+			if ui.Button(c, truncateRunes(status, 80)).FontSize(10).TextColor(t.Danger).
 				Tooltip("点击查看完整错误").Clicked() {
 				a.showErrorDetail(failDetail)
 			}
 		} else {
 			ui.Text(c, status).FontSize(10).TextColor(t.TextMuted)
 		}
+		ui.Box(c).Width(1).Height(12).Background(t.Border.Mix(t.Surface, 0.2))
+		// ── 当前环境 ──
+		env := a.scenario.ActiveEnv
+		if env == "" {
+			env = "无环境"
+		}
+		ui.Text(c, "环境: "+truncateRunes(env, 16)).FontSize(10).TextColor(t.Accent)
+		// ── 代理状态 ──
+		ui.Text(c, "代理: 未启用").FontSize(10).TextColor(t.TextMuted)
 		ui.Spacer(c)
+		// ── 保存状态 ──
 		if a.filePath != "" {
-			ui.Text(c, a.filePath).FontSize(10).TextColor(t.TextMuted)
+			ui.Text(c, "● 已保存").FontSize(10).TextColor(t.Success)
+			ui.Text(c, truncateRunes(a.filePath, 40)).FontSize(10).TextColor(t.TextMuted)
+		} else {
+			ui.Text(c, "○ 未保存").FontSize(10).TextColor(t.TextMuted)
 		}
 	})
 }

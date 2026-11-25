@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"path/filepath"
+
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
@@ -22,15 +24,39 @@ func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
 			ui.Text(c, "request流程自动化").FontSize(9).TextColor(t.TextMuted)
 		})
 		toolbarDivider(c, t)
-		// 当前场景名（工作区概念）。
-		ui.Icon(c, iconFolder).Size(15, 15).TextColor(t.TextMuted)
-		ui.Text(c, a.scenario.Name).FontSize(12).Bold().SingleLine()
-		if a.filePath != "" {
-			ui.Badge(c, "已保存").TextColor(t.TextMuted)
-		} else {
-			ui.Badge(c, "未保存").TextColor(t.TextMuted)
+		// ── 工作区切换：点击选择场景工作区目录 ──
+		wsName := "工作区"
+		if a.workspace.dir != "" {
+			wsName = filepath.Base(a.workspace.dir)
 		}
+		if ui.Button(c, "▦ "+truncateRunes(wsName, 12)).Tooltip("切换场景工作区目录").Clicked() {
+			a.openWorkspace()
+		}
+		// ── 环境选择：弹出菜单列出所有环境 + 无环境 ──
+		envName := a.scenario.ActiveEnv
+		if envName == "" {
+			envName = "无环境"
+		}
+		ui.PopoverMenuButton(c, "◈ "+truncateRunes(envName, 12), func(m *ui.Menu) {
+			if m.Item("无环境").Chosen() {
+				a.scenario.ActiveEnv = ""
+				a.log("已切换到环境：无环境")
+			}
+			for _, name := range a.scenario.EnvNames() {
+				env := name
+				if m.Item(env).Chosen() {
+					a.scenario.ActiveEnv = env
+					a.log("已切换到环境：" + env)
+				}
+			}
+		})
+		toolbarDivider(c, t)
+		// 当前场景名。
+		ui.Text(c, a.scenario.Name).FontSize(12).Bold().SingleLine()
 		ui.Spacer(c)
+
+		// ── 全局搜索：过滤左侧导航列表 ──
+		ui.SearchField(c, &a.globalSearch).Placeholder("全局搜索…").Width(180)
 
 		// ── 文件组：新建 / 打开 / 保存（统一图标按钮，等高对齐） ──
 		toolbarGroup(c, t, func() {

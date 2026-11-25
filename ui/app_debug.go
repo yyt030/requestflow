@@ -10,7 +10,7 @@ import (
 
 // debugPanel 接口调试面板：上半请求配置，下半响应展示。
 func (a *App) debugPanel(c *ui.Context, t *ui.Theme) {
-	ui.SplitVertical(c, &a.splitDebug, func() {
+	ui.SplitVerticalPercent(c, &a.splitDebug, func() {
 		a.debugRequestArea(c, t)
 	}, func() {
 		a.debugResponseArea(c, t)
@@ -92,38 +92,50 @@ func (a *App) debugRequestArea(c *ui.Context, t *ui.Theme) {
 // debugResponseArea Postman 风格响应区：状态/耗时/大小概览 + 分段标签。
 func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Fill().Children(func() {
+		// 指标行：状态码、耗时、大小、过滤框。
 		ui.Row(c).Padding(8, 12).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Segmented(c, &a.debugView, "Body", "Headers", "Cookies", "代码")
-			if a.debugResult != nil && a.debugResult.OK && a.debugView < 3 {
-				if ui.Button(c, "⧉ 复制").Tooltip("复制当前标签内容到剪贴板").Clicked() {
+			if a.debugResult != nil && a.debugResult.OK {
+				statusColor := t.Success
+				if a.debugResult.StatusCode >= 400 {
+					statusColor = t.Danger
+				}
+				ui.Badge(c, fmt.Sprintf("%d %s", a.debugResult.StatusCode, a.debugResult.StatusText)).TextColor(statusColor)
+				ui.Text(c, fmt.Sprintf("%d ms", a.debugResult.DurationMS)).FontSize(11).TextColor(t.TextMuted)
+				ui.Text(c, fmt.Sprintf("%d B", a.debugResult.Size)).FontSize(11).TextColor(t.TextMuted)
+			}
+			ui.Spacer(c)
+			// 过滤输入框：对当前视图内容实时过滤。
+			ui.SearchField(c, &a.respFilter).Placeholder("过滤响应…").Width(160)
+		})
+		// 子标签行：Body / Headers / Cookies / Test / 代码 + 复制。
+		ui.Row(c).Padding(0, 12, 8, 12).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Segmented(c, &a.debugView, "Body", "Headers", "Cookies", "Test", "代码")
+			if a.debugResult != nil && a.debugResult.OK && a.debugView <= 2 {
+				if ui.Button(c, "⧉ 复制").Tooltip("复制当前标签内容").Clicked() {
 					a.copyDebugResponse()
 				}
 			}
 			ui.Spacer(c)
 			if a.debugSending {
 				ui.Text(c, "发送中…").FontSize(11).TextColor(t.Accent)
-			} else if a.debugResult != nil {
-				res := a.debugResult
-				if res.OK {
-					statusColor := t.Success
-					if res.StatusCode >= 400 {
-						statusColor = t.Danger
-					}
-					ui.Badge(c, fmt.Sprintf("%d %s", res.StatusCode, res.StatusText)).TextColor(statusColor)
-					ui.Text(c, fmt.Sprintf("%d ms", res.DurationMS)).FontSize(11).TextColor(t.TextMuted)
-					ui.Text(c, fmt.Sprintf("%d B", res.Size)).FontSize(11).TextColor(t.TextMuted)
-				} else {
-					ui.Text(c, "✗ 请求失败").FontSize(11).Bold().TextColor(t.Danger)
-				}
 			}
 		})
 		ui.Divider(c)
-		// 底部留白：抵消 Selectable 文本末行实测高度小于绘制高度的误差，
-		// 保证滚到底时末行（如 JSON 结尾大括号）完整露出、不被底部状态栏压住。
+		// Body 视图的工具行：JSON/Text 切换 + JSONPath 过滤。
+		if a.debugView == 0 {
+			ui.Row(c).Padding(6, 12).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Segmented(c, &a.respJSONMode, "Text", "JSON")
+				ui.Text(c, "JSONPath").FontSize(10).TextColor(t.TextMuted)
+				ui.TextInput(c, &a.respJSONPath).Placeholder("如 data.token（留空全部）").Width(200)
+			})
+		}
 		ui.Scroll(c).Grow(1).Padding(10, 12, 40, 12).Children(func() {
-			// 代码生成标签：基于最近一次调试请求生成，无需请求成功即可查看。
-			if a.debugView == 3 {
+			if a.debugView == 4 {
 				a.codeSnippetView(c, t)
+				return
+			}
+			if a.debugView == 3 {
+				a.testResultView(c, t)
 				return
 			}
 			if a.debugSending || a.debugResult == nil {
@@ -141,6 +153,25 @@ func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 			a.responseBodyView(c, t, res)
 		})
 	})
+}
+
+// testResultView 测试结果视图：展示最近响应的断言摘要。
+func (a *App) testResultView(c *ui.Context, t *ui.Theme) {
+	if a.debugResult == nil {
+		ui.Text(c, "发送一次请求后查看测试结果。").FontSize(11).TextColor(t.TextMuted)
+		return
+	}
+	res := a.debugResult
+	ui.Text(c, "测试结果").FontSize(12).Bold()
+	ui.Box(c).Height(6)
+	pass := res.OK && res.StatusCode > 0 && res.StatusCode < 400
+	if pass {
+		ui.Text(c, "✓ 状态断言通过：HTTP "+fmt.Sprintf("%d", res.StatusCode)).FontSize(11).TextColor(t.Success)
+	} else {
+		ui.Text(c, "✗ 状态断言未通过："+fmt.Sprintf("%d", res.StatusCode)).FontSize(11).TextColor(t.Danger)
+	}
+	ui.Box(c).Height(6)
+	fieldHint(c, t, "断言规则在请求的「断言」标签配置；运行结果视图可查看完整断言明细。")
 }
 
 // codeSnippetView 代码生成面板：把当前请求转成 Python/Go/JS/cURL 代码片段。

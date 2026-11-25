@@ -44,8 +44,9 @@ type App struct {
 	// 步骤列表拖拽
 	listState       ui.ListState
 	splitSide       float32
+	splitSidePrev   float32 // 侧栏折叠前宽度
 	splitLog        float32
-	splitEditorResp float32 // 编排区「配置 / 响应」垂直分屏位置（接口调试合并后）
+	splitEditorResp float32 // 编排区「配置 / 响应」垂直分屏百分比（默认 50/50）
 
 	// "新建步骤"菜单
 	adding     bool
@@ -158,6 +159,47 @@ type App struct {
 
 	// 场景工作区：一个目录下的多个场景 JSON，点击列表即可切换编辑（详见 app_workspace.go）。
 	workspace workspaceState
+
+	// ── 布局重构（Postman 风格五区）新增状态 ──
+	// 全局搜索：顶栏输入，过滤侧栏列表。
+	globalSearch string
+	// 侧栏折叠与三块导航：0=Collections 1=Flows 2=History。
+	sidebarCollapsed bool
+	sidebarSection   int
+	// 侧栏右键菜单：当前右键目标类型与索引（"-1" 表示空白区），以及菜单开关。
+	sideMenuOpen   bool
+	sideMenuKind   string           // "collection" | "flow" | "history" | "blank"
+	sideMenuTarget int              // 步骤/场景索引
+	ctxMenuOpens   map[string]*bool // 每行独立的右键菜单开关（按 key 持久）
+	// 右侧抽屉：默认收起；section 0=环境变量 1=代码片段 2=历史详情 3=流程变量。
+	drawerOpen    bool
+	drawerSection int
+	drawerWidth   float32
+	// 中央多标签：每个标签绑定一个步骤/场景/结果视图，可关闭、可拖动排序。
+	workTabs    []workTab
+	activeWork  int // 当前激活标签在 workTabs 中的索引
+	nextTabSeq  int
+	tabDragFrom int // 标签拖动源索引，-1 表示无
+	// 顶栏环境选择弹层开关。
+	headerEnvOpen bool
+	// 响应区：JSON/Text 切换、过滤、JSONPath 过滤。
+	respJSONMode int // Segmented 索引：0=Text 原文，1=JSON 美化
+	respFilter   string
+	respJSONPath string
+}
+
+// workTab 中央工作区的一个标签页。
+type workTab struct {
+	id    string
+	label string
+	kind  string // "step" | "flow" | "result"
+	step  int    // kind=step 时对应的步骤索引
+}
+
+// newWorkTab 生成一个带自增 ID 的标签。
+func (a *App) newWorkTab(label, kind string, step int) workTab {
+	a.nextTabSeq++
+	return workTab{id: fmt.Sprintf("tab-%d", a.nextTabSeq), label: label, kind: kind, step: step}
 }
 
 // Run 启动 GUI。
@@ -166,9 +208,10 @@ func Run() {
 		scenario:         demoScenario(),
 		selectedStep:     -1,
 		splitSide:        280,
+		splitSidePrev:    280,
 		splitLog:         220,
-		splitDebug:       360,
-		splitEditorResp:  380,
+		splitDebug:       50,
+		splitEditorResp:  50,
 		debugMethod:      "GET",
 		debugAuthType:    "none",
 		debugBodyType:    "raw",
@@ -189,14 +232,19 @@ func Run() {
 		varExpanded:      map[string]bool{},
 		tabDirty:         map[string]string{},
 		debugTabDirty:    map[string]string{},
+		sidebarSection:   0,
+		drawerWidth:      300,
+		tabDragFrom:      -1,
+		ctxMenuOpens:     map[string]*bool{},
+		respJSONMode:     1,
 	}
 	app.refreshDebugTabBaseline() // 记录初始调试请求配置为基线
 	app.logs = append(app.logs, "就绪。打开或新建场景，配置步骤后点击【一键运行】。")
 	mygo.App.WhenReady(func() {
 		app.win = mygo.NewWindow(mygo.WindowOptions{
 			Title:   "RequestFlow " + version.Short() + " · request流程自动化",
-			Width:   1180,
-			Height:  780,
+			Width:   1440,
+			Height:  900,
 			Content: ui.View(app.view),
 		})
 	})
@@ -210,8 +258,27 @@ func (a *App) view(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Fill().Children(func() {
 		a.toolbar(c, t)
+		// 左侧栏（可折叠）+ 中央工作区 + 右侧抽屉。
+		// 抽屉收起时只留 44px 窄条，展开时 320px，避免挤占中央工作区。
+		if a.drawerOpen {
+			a.drawerWidth = 320
+		} else {
+			a.drawerWidth = 44
+		}
+		// 侧栏折叠：记住宽度并压到 44；展开时恢复到合理值。
+		if a.sidebarCollapsed {
+			if a.splitSide > 100 {
+				a.splitSidePrev = a.splitSide
+			}
+			a.splitSide = 44
+		} else if a.splitSide < 100 && a.splitSidePrev > 100 {
+			a.splitSide = a.splitSidePrev
+		}
 		ui.Split(c, &a.splitSide, func() { a.sidebar(c, t) }, func() {
-			a.mainArea(c, t)
+			// 抽屉作为第一个区（宽度由 drawerWidth 控制），主区占满剩余。
+			ui.Split(c, &a.drawerWidth, func() { a.rightDrawer(c, t) }, func() {
+				a.mainArea(c, t)
+			}).Grow(1)
 		}).Grow(1)
 		// 新建场景向导：以 Modal 覆盖窗口，选择模板或空白场景。
 		ui.Modal(c, &a.showTemplateWizard, func() {

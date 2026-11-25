@@ -195,7 +195,7 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 		// 内容区：request 步骤用「配置 / 响应」上下分屏，编排中即可直接调试；
 		// 其余步骤保持单一滚动配置区。底部加大留白，避免末行被状态栏截断。
 		if isReq {
-			ui.SplitVertical(c, &a.splitEditorResp, func() {
+			ui.SplitVerticalPercent(c, &a.splitEditorResp, func() {
 				ui.Scroll(c).Grow(1).Padding(12, 14, 24, 14).Gap(10).Children(func() {
 					a.stepTabView(c, t, step, tabs[tab])
 				})

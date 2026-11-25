@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"fmt"
-
 	"github.com/egoist/mygo/ui"
 
 	"requestflow/model"
@@ -12,34 +10,55 @@ import (
 // 场景/步骤/变量都是一行行树节点（图标 + 文字），没有常驻的大输入框；
 // 需要编辑名字或 key=value 时点击节点弹出 Modal，编辑完即关闭。
 func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
+	// 折叠态：只留一条窄栏与展开按钮。
+	if a.sidebarCollapsed {
+		ui.Column(c).Fill().AlignItems(ui.Center).Padding(6, 4).Gap(10).Background(t.Surface).Children(func() {
+			if ui.Button(c, "›").Tooltip("展开左侧栏").Width(24).Clicked() {
+				a.sidebarCollapsed = false
+			}
+			for _, lbl := range []string{"集", "流", "史"} {
+				ui.Text(c, lbl).FontSize(10).TextColor(t.TextMuted)
+			}
+		})
+		return
+	}
 	ui.Column(c).Fill().Children(func() {
-		// 面板标题栏。
+		// 面板标题栏：命名空间 + 折叠按钮。
 		ui.Row(c).Padding(12, 12, 8, 12).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, iconFolder).Size(16, 16).TextColor(brandOrange)
 			ui.Text(c, "资源管理器").FontSize(13).Bold()
 			ui.Spacer(c)
-			ui.Text(c, fmt.Sprintf("%d 项", len(a.scenario.Steps))).FontSize(10).TextColor(t.TextMuted)
+			if ui.Button(c, "‹").Tooltip("折叠左侧栏").Width(22).Clicked() {
+				a.sidebarCollapsed = true
+			}
 		})
-		// 左侧多标签（Postman 风格）：工作区 / 变量。
+		// 三块导航（Postman/简单版风格）：Collections / Flows / History。
 		ui.Row(c).Padding(0, 10, 8, 10).Children(func() {
-			ui.Segmented(c, &a.sidebarTab, "工作区", "变量")
+			ui.Segmented(c, &a.sidebarSection, "Collections", "Flows", "History")
 		})
-		if a.sidebarTab == 1 {
-			// 变量标签：环境选择 + 全局变量 + 环境变量 + 变量速查。
-			ui.Scroll(c).Grow(1).Padding(2, 8, 10, 8).Children(func() {
-				a.environmentEditor(c, t)
-			})
-			return
+		// 全局搜索过滤框（与顶栏全局搜索联动：优先用顶栏输入）。
+		q := a.globalSearch
+		if q == "" {
+			q = a.stepSearch
 		}
-		// 工作区标签：搜索框 + 场景工作区（多场景切换）+ 当前场景步骤树。
-		ui.Row(c).Padding(0, 12, 10, 12).Children(func() {
-			ui.SearchField(c, &a.stepSearch).Placeholder("搜索步骤…")
+		search := q
+		ui.Row(c).Padding(0, 12, 8, 12).Children(func() {
+			if ui.SearchField(c, &search).Placeholder("搜索…").Changed() {
+				a.globalSearch = search
+				a.stepSearch = search
+			}
 		})
 		ui.Scroll(c).Grow(1).Padding(2, 8, 10, 8).Children(func() {
-			a.workspacePanel(c, t)
-			ui.Box(c).Height(8)
-			a.fileTree(c, t)
+			switch a.sidebarSection {
+			case 0:
+				a.collectionsView(c, t)
+			case 1:
+				a.flowsView(c, t)
+			case 2:
+				a.historyView(c, t)
+			}
 		})
+		a.sidebarContextMenu(c, t)
 	})
 }
 
