@@ -83,6 +83,7 @@ func (a *App) selectStep(i int) {
 
 func (a *App) selectStepNoSync(i int) {
 	a.selectedStep = i
+	a.stepNameEditing = false // 切换步骤时退出名称内联编辑，避免串到别的步骤
 }
 
 // openStepDebug 双击步骤：HTTP 请求步骤同步配置为调试快照（编排区下方即可发送看响应）；

@@ -115,6 +115,26 @@ func (a *App) toolbar(c *ui.Context, t *ui.Theme) {
 				}
 			})
 		})
+		toolbarDivider(c, t)
+
+		// ── 辅助面板：顶栏按钮下拉气泡，点外部 / Esc 自动收起 ──
+		drawerLabel := "▤ 辅助面板"
+		if a.drawerOpen {
+			drawerLabel = "▤ 收起面板"
+		}
+		drawerBtn := ui.Button(c, drawerLabel).Tooltip("变量 / 代码 / 历史 / 流程变量（点外部或 Esc 自动收起）")
+		if a.drawerOpen {
+			drawerBtn.TextColor(brandOrange)
+		}
+		if drawerBtn.Clicked() {
+			a.drawerOpen = !a.drawerOpen
+		}
+		// 气泡锚定在按钮下方右对齐，宽度 380、高度 560；点外部或 Esc 由 Popover 自动关闭。
+		ui.Popover(c, drawerBtn, &a.drawerOpen, func() {
+			ui.Column(c).Width(380).Height(560).Children(func() {
+				a.rightDrawer(c, t)
+			})
+		})
 	})
 }
 

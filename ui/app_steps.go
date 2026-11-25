@@ -157,23 +157,70 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 		}
 		step := &a.scenario.Steps[a.selectedStep]
 
-		// 顶部固定区：步骤概览常驻，切标签时不跟随滚动（接口调试风格）。
-		// request 步骤带醒目的【发送】按钮，直接调试当前步骤配置。
+		// 顶部固定区（Postman 风格）：
+		// ① 元信息行：步骤名（双击编辑）+ 类型徽标 + 运行开关；
+		// ② 请求行（仅 HTTP 步骤）：Method 下拉 + URL + 变量插入 + 发送按钮，常驻、不随子标签切换。
 		isReq := step.Type == model.StepRequest
-		ui.Column(c).Gap(6).Padding(10, 14, 6, 14).Children(func() {
-			// 步骤配置与名称同一行：标题/类型在左，名称输入自适应占中，操作项靠右，整体紧凑。
+		ui.Column(c).Gap(8).Padding(10, 14, 8, 14).Children(func() {
+			// ① 元信息行
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "步骤配置").FontSize(13).Bold()
-				ui.Text(c, string(step.Type)).FontSize(10).TextColor(t.Accent)
-				ui.TextInput(c, &step.Name).Placeholder("步骤名称").Grow(1)
-				if isReq {
-					if ui.PrimaryButton(c, "▶ 发送").Disabled(a.debugSending).Tooltip("用当前步骤配置发送请求，响应显示在下方").Clicked() {
-						a.debugStep(step)
+				if a.stepNameEditing {
+					// 编辑态：短输入框 + 确认/取消。
+					ti := ui.TextInput(c, &a.stepNameBuf).Width(180).FontSize(13).Bold()
+					if ti.Submitted() {
+						a.commitStepName(step)
+					}
+				} else {
+					// 显示态：名称文本（双击进入编辑），留空时给占位提示。
+					name := step.Name
+					if name == "" {
+						name = "未命名步骤"
+					}
+					nt := ui.Text(c, name).FontSize(13).Bold().SingleLine()
+					if step.Name == "" {
+						nt.TextColor(t.TextMuted)
+					}
+					nt.Tooltip("双击重命名步骤")
+					if nt.DoubleClicked() {
+						a.stepNameEditing = true
+						a.stepNameBuf = step.Name
 					}
 				}
+				// 类型徽标放在名称之后。
+				ui.Box(c).Width(46).Height(19).Radius(5).Background(t.Accent.Mix(t.Surface, 0.86)).Center().Children(func() {
+					ui.Text(c, string(step.Type)).FontSize(9).Bold().TextColor(t.Accent).SingleLine()
+				})
+				if a.stepNameEditing {
+					if ui.Button(c, "✓").Tooltip("保存名称").Width(26).Clicked() {
+						a.commitStepName(step)
+					}
+					if ui.Button(c, "✕").Tooltip("取消").Width(26).Clicked() {
+						a.stepNameEditing = false
+					}
+				}
+				ui.Spacer(c)
 				ui.Checkbox(c, &step.Enabled, "启用")
 				ui.Checkbox(c, &step.ContinueOnFail, "失败后继续")
 			})
+
+			// ② Postman 请求行：Method + URL + 变量 + 发送，发送与方法/URL 同行。
+			if isReq {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					methods := []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
+					method := step.Method
+					if method == "" {
+						method = "GET"
+					}
+					if ui.Select(c, &method, methods).Width(100).Changed() {
+						step.Method = method
+					}
+					ui.TextInput(c, &step.URL).Placeholder("{{baseUrl}}/path 或完整 URL").Grow(1)
+					a.varInsertButton(c, t, &step.URL, collectVarNames(a.scenario))
+					if ui.PrimaryButton(c, "▶ 发送").Disabled(a.debugSending).Tooltip("用当前步骤配置发送请求，响应显示在下方").Clicked() {
+						a.debugStep(step)
+					}
+				})
+			}
 		})
 
 		// 配置子标签：HTTP 请求步骤像接口调试一样细粒度拆分，其余步骤单标签承载。
@@ -208,6 +255,14 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 			})
 		}
 	})
+}
+
+// commitStepName 提交中央顶部的步骤名内联编辑（回车或点✓）。
+func (a *App) commitStepName(step *model.Step) {
+	if n := strings.TrimSpace(a.stepNameBuf); n != "" {
+		step.Name = n
+	}
+	a.stepNameEditing = false
 }
 
 // debugPanel 接口调试面板：上半请求配置，下半响应展示。

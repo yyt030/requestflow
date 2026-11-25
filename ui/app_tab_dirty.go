@@ -245,7 +245,13 @@ func (a *App) refreshTabBaseline() {
 	}
 	for i := range a.scenario.Steps {
 		step := &a.scenario.Steps[i]
-		for _, tab := range stepTabNames(step) {
+		tabs := stepTabNames(step)
+		// 请求行的 Method/URL 已不占标签位，但仍保留「常规」作为隐藏指纹分组，
+		// 持续追踪顶部请求行的改动（UI 不显示该标签）。
+		if step.Type == model.StepRequest {
+			tabs = append(tabs, "常规")
+		}
+		for _, tab := range tabs {
 			a.tabDirty[tabKey(step, tab)] = tabFingerprint(step, tab)
 		}
 	}

@@ -148,8 +148,11 @@ type App struct {
 	// 取代原先常驻的大文本框与铺开的行内输入框。
 	nameEditOpen bool
 	nameEditBuf  string
-	envEditOpen  bool
-	envEditBuf   string
+	// 步骤名内联编辑：双击中央顶部名称进入编辑态，回车/失焦提交。
+	stepNameEditing bool
+	stepNameBuf     string
+	envEditOpen     bool
+	envEditBuf      string
 	// 变量编辑弹窗：target 为 "global" 或环境名，origKey 为空表示新建。
 	varEditOpen    bool
 	varEditTarget  string
@@ -258,13 +261,8 @@ func (a *App) view(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Fill().Children(func() {
 		a.toolbar(c, t)
-		// 左侧栏（可折叠）+ 中央工作区 + 右侧抽屉。
-		// 抽屉收起时只留 44px 窄条，展开时 320px，避免挤占中央工作区。
-		if a.drawerOpen {
-			a.drawerWidth = 320
-		} else {
-			a.drawerWidth = 44
-		}
+		// 左侧栏（可折叠）+ 中央工作区。辅助面板由顶栏按钮的下拉气泡承载
+		// （见 app_toolbar.go），不占布局宽度，点外部 / Esc 自动收起。
 		// 侧栏折叠：记住宽度并压到 44；展开时恢复到合理值。
 		if a.sidebarCollapsed {
 			if a.splitSide > 100 {
@@ -275,10 +273,7 @@ func (a *App) view(c *ui.Context) {
 			a.splitSide = a.splitSidePrev
 		}
 		ui.Split(c, &a.splitSide, func() { a.sidebar(c, t) }, func() {
-			// 抽屉作为第一个区（宽度由 drawerWidth 控制），主区占满剩余。
-			ui.Split(c, &a.drawerWidth, func() { a.rightDrawer(c, t) }, func() {
-				a.mainArea(c, t)
-			}).Grow(1)
+			a.mainArea(c, t)
 		}).Grow(1)
 		// 新建场景向导：以 Modal 覆盖窗口，选择模板或空白场景。
 		ui.Modal(c, &a.showTemplateWizard, func() {

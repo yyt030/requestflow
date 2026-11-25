@@ -6,29 +6,17 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// rightDrawer 右侧抽屉：默认收起为窄条，按需展开承载环境变量 / 代码片段 /
-// 历史详情 / 流程变量四类辅助内容。用抽屉而非常驻右栏，避免简单版界面过重。
+// rightDrawer 悬浮辅助面板的内容：承载环境变量 / 代码片段 / 历史详情 /
+// 流程变量四类辅助内容。面板本体由 view() 以 Overlay 浮在窗口最右侧，
+// 收起态不占任何布局空间，触发按钮在顶栏；点击面板外部或 Escape 自动收起。
 func (a *App) rightDrawer(c *ui.Context, t *ui.Theme) {
-	if !a.drawerOpen {
-		// 收起态：一条窄竖栏，仅一个展开按钮，纵向排布。
-		ui.Column(c).Fill().AlignItems(ui.Center).Padding(6, 4).Gap(10).Background(t.Surface).Children(func() {
-			if ui.Button(c, "‹").Tooltip("展开右侧抽屉（变量 / 代码 / 历史 / 流程变量）").Width(24).Clicked() {
-				a.drawerOpen = true
-			}
-			ui.Text(c, "辅").FontSize(10).TextColor(t.TextMuted)
-			ui.Text(c, "助").FontSize(10).TextColor(t.TextMuted)
-			ui.Text(c, "面").FontSize(10).TextColor(t.TextMuted)
-			ui.Text(c, "板").FontSize(10).TextColor(t.TextMuted)
-		})
-		return
-	}
-
 	ui.Column(c).Fill().Children(func() {
 		// 抽屉标题栏：四块切换 + 收起按钮。
 		ui.Row(c).Padding(8, 10).Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, iconFolder).Size(14, 14).TextColor(brandOrange)
 			ui.Text(c, "辅助面板").FontSize(12).Bold()
 			ui.Spacer(c)
-			if ui.Button(c, "›").Tooltip("收起抽屉").Width(24).Clicked() {
+			if ui.Button(c, "›").Tooltip("收起面板（也可点击面板外部或按 Esc）").Width(24).Clicked() {
 				a.drawerOpen = false
 			}
 		})

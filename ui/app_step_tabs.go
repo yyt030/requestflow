@@ -11,7 +11,8 @@ import (
 func stepTabNames(step *model.Step) []string {
 	switch step.Type {
 	case model.StepRequest:
-		return []string{"常规", "Params", "Headers", "Body", "Auth", "提取", "断言", "脚本"}
+		// Postman 风格：Method/URL 已提到顶部请求行，子标签不再有「常规」。
+		return []string{"Params", "Headers", "Body", "Auth", "提取", "断言", "脚本"}
 	case model.StepTCP:
 		return []string{"常规", "帧头", "发送", "读取", "提取", "断言", "脚本", "调试"}
 	case model.StepLoop:
@@ -106,21 +107,8 @@ func (a *App) requestTabView(c *ui.Context, t *ui.Theme, step *model.Step, tab s
 		a.editorAssertList(c, t, step)
 	case "脚本":
 		a.editorRequestScripts(c, t, step)
-	default: // 常规：方法 + URL + 试发送
-		ui.Text(c, "请求").FontSize(12).Bold()
-		fieldHint(c, t, "发送一个 HTTP 请求；相对路径自动拼接 Base URL，完整 http(s):// 则忽略。")
-		ui.Row(c).Gap(8).Children(func() {
-			methods := []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
-			method := step.Method
-			if method == "" {
-				method = "GET"
-			}
-			if ui.Select(c, &method, methods).Label("方法").Width(110).Changed() {
-				step.Method = method
-			}
-			ui.TextInput(c, &step.URL).Placeholder("{{baseUrl}}/path 或完整 URL").Label("URL").Grow(1)
-			a.varInsertButton(c, t, &step.URL, collectVarNames(a.scenario))
-		})
-		fieldHint(c, t, "配置完成后点右上角【▶ 发送】即可调试当前步骤，响应显示在下方。")
+	default: // 兼容旧数据：若某处仍传入已移除的「常规」，给出迁移提示。
+		ui.Text(c, "请求方法与 URL 已移至上方请求行配置。").FontSize(12).Bold()
+		fieldHint(c, t, "相对路径自动拼接 Base URL，完整 http(s):// 则忽略；配置后点请求行右侧【▶ 发送】。")
 	}
 }

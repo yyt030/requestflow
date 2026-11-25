@@ -39,14 +39,11 @@ func (a *App) mainArea(c *ui.Context, t *ui.Theme) {
 }
 
 // workTabBar 多标签栏：每个标签可激活/关闭/排序，末尾"＋"新建请求标签。
+// 不再默认塞入固定的"步骤编排"标签——主区默认显示空态引导，
+// 用户从侧栏点击步骤/流程或点"＋"才打开对应标签（语义更清晰、无冗余标签）。
 func (a *App) workTabBar(c *ui.Context, t *ui.Theme) {
-	// 懒初始化：保证至少有一个标签。
-	if len(a.workTabs) == 0 {
-		a.workTabs = append(a.workTabs, a.newWorkTab("步骤编排", "flow", -1))
-		a.activeWork = 0
-	}
-	if a.activeWork < 0 || a.activeWork >= len(a.workTabs) {
-		a.activeWork = 0
+	if len(a.workTabs) > 0 && (a.activeWork < 0 || a.activeWork >= len(a.workTabs)) {
+		a.activeWork = len(a.workTabs) - 1
 	}
 
 	ui.Row(c).Padding(6, 8, 4, 8).Gap(4).AlignItems(ui.Center).Children(func() {
