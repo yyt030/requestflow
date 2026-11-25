@@ -81,6 +81,7 @@ func (a *App) syncStepToDebug(step *model.Step) {
 	if step == nil {
 		return
 	}
+	// 步骤内联字段即请求真相源，直接同步到调试快照。
 	a.debugMethod = step.Method
 	if a.debugMethod == "" {
 		a.debugMethod = "GET"

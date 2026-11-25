@@ -25,7 +25,7 @@ func (a *App) mainArea(c *ui.Context, t *ui.Theme) {
 				case "result":
 					a.consoleOnly(c, t)
 				case "flow":
-					a.editor(c, t) // 流程视图：步骤编排
+					a.flowEditor(c, t) // 流程视图：线性步骤编排（列表 + 步骤配置）
 				default:
 					a.editor(c, t) // 步骤请求：配置 + 响应上下分屏
 				}

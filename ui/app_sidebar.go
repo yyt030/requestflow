@@ -6,9 +6,9 @@ import (
 	"requestflow/model"
 )
 
-// ---------- 左侧：VSCode 资源管理器风格的紧凑树 ----------
-// 场景/步骤/变量都是一行行树节点（图标 + 文字），没有常驻的大输入框；
-// 需要编辑名字或 key=value 时点击节点弹出 Modal，编辑完即关闭。
+// ---------- 左侧：Postman 风格的统一集合树 ----------
+// 各场景（展开为步骤）、History 合并成一棵可展开的树，
+// 不再用 Segmented 分块切换——所有内容在同一棵树里一眼可见。
 func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 	// 折叠态：只留一条窄栏与展开按钮。
 	if a.sidebarCollapsed {
@@ -16,9 +16,7 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 			if ui.Button(c, "›").Tooltip("展开左侧栏").Width(24).Clicked() {
 				a.sidebarCollapsed = false
 			}
-			for _, lbl := range []string{"集", "流", "史"} {
-				ui.Text(c, lbl).FontSize(10).TextColor(t.TextMuted)
-			}
+			ui.Text(c, "树").FontSize(10).TextColor(t.TextMuted)
 		})
 		return
 	}
@@ -32,33 +30,17 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 				a.sidebarCollapsed = true
 			}
 		})
-		// 三块导航（Postman/简单版风格）：Collections / Flows / History。
-		ui.Row(c).Padding(0, 10, 8, 10).Children(func() {
-			ui.Segmented(c, &a.sidebarSection, "Collections", "Flows", "History")
-		})
-		// 全局搜索过滤框（与顶栏全局搜索联动：优先用顶栏输入）。
-		q := a.globalSearch
-		if q == "" {
-			q = a.stepSearch
-		}
-		search := q
+		// 全局搜索：与顶栏输入联动，一处过滤整棵树的请求 / 步骤 / 场景。
+		search := a.globalSearch
 		ui.Row(c).Padding(0, 12, 8, 12).Children(func() {
-			if ui.SearchField(c, &search).Placeholder("搜索…").Changed() {
+			if ui.SearchField(c, &search).Placeholder("搜索请求 / 步骤 / 场景…").Changed() {
 				a.globalSearch = search
 				a.stepSearch = search
 			}
 		})
 		ui.Scroll(c).Grow(1).Padding(2, 8, 10, 8).Children(func() {
-			switch a.sidebarSection {
-			case 0:
-				a.collectionsView(c, t)
-			case 1:
-				a.flowsView(c, t)
-			case 2:
-				a.historyView(c, t)
-			}
+			a.unifiedTree(c, t)
 		})
-		a.sidebarContextMenu(c, t)
 	})
 }
 

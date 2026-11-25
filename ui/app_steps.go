@@ -161,6 +161,7 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 		// ① 元信息行：步骤名（双击编辑）+ 类型徽标 + 运行开关；
 		// ② 请求行（仅 HTTP 步骤）：Method 下拉 + URL + 变量插入 + 发送按钮，常驻、不随子标签切换。
 		isReq := step.Type == model.StepRequest
+		// 步骤内联字段即请求真相源：直接编辑、直接发送。
 		ui.Column(c).Gap(8).Padding(10, 14, 8, 14).Children(func() {
 			// ① 元信息行
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -203,7 +204,8 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 				ui.Checkbox(c, &step.ContinueOnFail, "失败后继续")
 			})
 
-			// ② Postman 请求行：Method + URL + 变量 + 发送，发送与方法/URL 同行。
+			// ② 请求行：统一直接编辑 Method + URL + 变量 + 发送（Postman 风格）。
+			//    请求字段内联在步骤中，直接维护、直接发送。
 			if isReq {
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 					methods := []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
@@ -223,12 +225,11 @@ func (a *App) editor(c *ui.Context, t *ui.Theme) {
 			}
 		})
 
-		// 配置子标签：HTTP 请求步骤像接口调试一样细粒度拆分，其余步骤单标签承载。
-		// 内容相对上次确认被改过的标签，名字后带绿色小圆点，便于快速定位改动。
+		// 配置子标签：请求步骤在此直接编辑全部字段（含 Params/Headers/Body/Auth）。
 		tabs := stepTabNames(step)
-		tab := clampStepTab(a, step)
+		tab := a.clampTabTo(tabs)
 		ui.Row(c).Padding(0, 14).AlignItems(ui.Center).Children(func() {
-			dirtyCount := a.tabBarWithDots(c, t, step)
+			dirtyCount := a.tabBarWithNames(c, t, step, tabs)
 			ui.Spacer(c)
 			if dirtyCount > 0 {
 				ui.Text(c, "已修改").FontSize(10).TextColor(t.Success)

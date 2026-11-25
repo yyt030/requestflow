@@ -68,15 +68,13 @@ const (
 )
 
 // Step 单个执行步骤。字段按类型取用，未使用的字段留空即可。
-
-// Step 单个执行步骤。字段按类型取用，未使用的字段留空即可。
 type Step struct {
 	ID      string   `json:"id"`
 	Name    string   `json:"name"`
 	Type    StepType `json:"type"`
 	Enabled bool     `json:"enabled"`
 
-	// --- request 字段 ---
+	// --- request 字段（步骤内联，是请求配置的唯一真相源）---
 	Method  string            `json:"method,omitempty"`
 	URL     string            `json:"url,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`

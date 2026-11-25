@@ -186,6 +186,7 @@ func (e *Engine) runStep(step model.Step, depth int) (retErr error) {
 	var err error
 	switch step.Type {
 	case model.StepRequest:
+		// 步骤内联字段即请求真相源，直接运行。
 		err = e.runRequest(step)
 	case model.StepTCP:
 		err = e.runTCPStep(step)

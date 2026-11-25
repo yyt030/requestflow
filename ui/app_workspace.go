@@ -133,6 +133,10 @@ func (a *App) scanWorkspace() {
 		if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".json") {
 			continue
 		}
+		// collection.json 是旧版请求集合文件，不是场景，不列入场景列表。
+		if strings.EqualFold(e.Name(), "collection.json") {
+			continue
+		}
 		a.workspace.files = append(a.workspace.files, filepath.Join(a.workspace.dir, e.Name()))
 	}
 	sort.Slice(a.workspace.files, func(i, j int) bool {

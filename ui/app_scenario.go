@@ -82,6 +82,7 @@ func (a *App) applyLoadedScenario(sc *model.Scenario, path string) {
 	a.selectedStep = -1
 	a.adding = false
 	a.showImport = false
+	// 请求字段内联在步骤中即真相源；打开场景不从集合覆盖，也不自动迁移。
 	a.resetResult()
 	a.refreshTabBaseline()
 	a.log("已打开: " + path)
@@ -112,6 +113,11 @@ func (a *App) saveTo(path string) {
 		return
 	}
 	a.refreshTabBaseline() // 保存后把当前内容记为基线，清除所有 ● 修改标记
+	// 统一树的场景步骤摘要来自缓存，保存后同步最新步骤，避免展开显示旧数据。
+	if a.sceneStepCache == nil {
+		a.sceneStepCache = map[string][]model.Step{}
+	}
+	a.sceneStepCache[path] = a.scenario.Steps
 	a.log("已保存: " + path)
 }
 

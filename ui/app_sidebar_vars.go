@@ -7,7 +7,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// sidebarModals 挂载侧边栏的三个编辑弹窗（场景名 / 环境 / 变量）。
+// sidebarModals 挂载侧边栏的编辑弹窗（场景名 / 环境 / 变量 / 工作区）。
 // 独立成方法以避免 app.go 触及单文件 300 行门禁。
 func (a *App) sidebarModals(c *ui.Context, t *ui.Theme) {
 	ui.Modal(c, &a.nameEditOpen, func() { a.nameEditModal(c, t) })

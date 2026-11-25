@@ -16,6 +16,7 @@ import (
 func runHeadless(path, dataFile, reportPath string) {
 	logger.Printf("无界面运行场景: %s", path)
 	sc := loadScenario(path)
+	// 请求字段内联在步骤中，是唯一真相源，直接运行即可。
 	emit := func(ev engine.Event) {
 		if ev.Message != "" {
 			logger.Printf("[%s] %s: %s", ev.Type, ev.StepName, ev.Message)
