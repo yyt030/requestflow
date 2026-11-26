@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"sync"
@@ -138,12 +139,18 @@ func (h *HTTPClient) DoRequest(step *model.Step, method, rawURL string, headers,
 		}
 	}
 
+	// 注入分段计时 trace（DNS/TCP/TLS/发送/首字节/下载），失败路径同样回填可用分段。
+	collector, trace := newTimingCollector()
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+
 	resp, err := h.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
+	collector.markBodyEnd()
+	timing := collector.result()
 	if err != nil {
 		return nil, err
 	}
@@ -157,6 +164,7 @@ func (h *HTTPClient) DoRequest(step *model.Step, method, rawURL string, headers,
 		Headers:    resp.Header,
 		Body:       decoded,
 		Text:       string(decoded),
+		Timing:     timing,
 	}
 	if out.Headers == nil {
 		out.Headers = map[string][]string{}

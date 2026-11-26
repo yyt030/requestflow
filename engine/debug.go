@@ -65,6 +65,7 @@ type DebugResult struct {
 	Body       string // 原始响应体
 	Formatted  string // JSON 美化后的响应体（非 JSON 则原文）
 	IsJSON     bool
+	Timing     *model.HTTPTiming // HTTP 分段耗时（Chrome Network Timing 风格；TCP/失败为 nil）
 	Curl       string
 	Snippets   map[string]string // 代码生成：python / go / javascript / curl
 
@@ -140,6 +141,7 @@ func Debug(req DebugRequest, vars map[string]string) *DebugResult {
 	res.StatusText = http.StatusText(resp.StatusCode)
 	res.Size = len(resp.Body)
 	res.Body = resp.Text
+	res.Timing = resp.Timing
 
 	keys := make([]string, 0, len(resp.Headers))
 	for k := range resp.Headers {

@@ -8,7 +8,7 @@ import (
 )
 
 // copyDebugResponse 按当前响应标签复制对应内容到剪贴板。
-// Body 复制格式化后的原文，Headers/Cookies 拼成可读文本。
+// Body 复制当前展示文本（原始/格式化/Hex 由切换决定，与界面所见一致），Headers/Cookies 拼成可读文本。
 func (a *App) copyDebugResponse() {
 	res := a.debugResult
 	if res == nil {
@@ -37,9 +37,14 @@ func (a *App) copyDebugResponse() {
 			b.WriteByte('\n')
 		}
 		text = strings.TrimRight(b.String(), "\n")
-	default: // Body：格式化后与展示一致
+	default: // Body：复制当前展示文本，与界面所见一致
 		label = "响应体"
-		text = res.Formatted
+		var errMsg string
+		text, errMsg = a.responseBodyText(res)
+		if errMsg != "" {
+			a.log("复制失败：" + errMsg)
+			return
+		}
 	}
 	if text == "" {
 		a.log(label + "为空，无可复制内容")

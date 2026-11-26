@@ -200,6 +200,7 @@ type Response struct {
 	Body       []byte
 	JSON       interface{} // 解析后的 JSON（若 body 是 JSON）
 	Text       string
+	Timing     *HTTPTiming // HTTP 请求的分段耗时（tcp/失败时为 nil）
 }
 
 // HTTPCookie 简化 cookie，避免 model 依赖 net/http。

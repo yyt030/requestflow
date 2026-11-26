@@ -198,8 +198,8 @@ type App struct {
 	tabDragFrom int // 标签拖动源索引，-1 表示无
 	// 顶栏环境选择弹层开关。
 	headerEnvOpen bool
-	// 响应区：JSON/Text 切换、过滤、JSONPath 过滤。
-	respJSONMode int // Segmented 索引：0=Text 原文，1=JSON 美化
+	// 响应区：原始/格式化/Hex 切换、过滤、JSONPath 过滤。
+	respBodyMode int // Segmented 索引：0=原始(Raw) 服务端原文，1=格式化(Pretty) 自动美化，2=Hex 十六进制转储
 	respFilter   string
 	respJSONPath string
 }

@@ -51,7 +51,7 @@ func Run() {
 		drawerWidth:      300,
 		tabDragFrom:      -1,
 		ctxMenuOpens:     map[string]*bool{},
-		respJSONMode:     1,
+		respBodyMode:     1,
 	}
 	// 请求字段内联在步骤中，是唯一真相源。
 	app.refreshDebugTabBaseline() // 记录初始调试请求配置为基线

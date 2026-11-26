@@ -107,9 +107,9 @@ func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 			// 过滤输入框：对当前视图内容实时过滤。
 			ui.SearchField(c, &a.respFilter).Placeholder("过滤响应…").Width(160)
 		})
-		// 子标签行：Body / Headers / Cookies / Test / 代码 + 复制。
+		// 子标签行：Body / Headers / Cookies / Test / 代码 / 耗时 + 复制。
 		ui.Row(c).Padding(0, 12, 8, 12).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Segmented(c, &a.debugView, "Body", "Headers", "Cookies", "Test", "代码")
+			ui.Segmented(c, &a.debugView, "Body", "Headers", "Cookies", "Test", "代码", "耗时")
 			if a.debugResult != nil && a.debugResult.OK && a.debugView <= 2 {
 				if ui.Button(c, "⧉ 复制").Tooltip("复制当前标签内容").Clicked() {
 					a.copyDebugResponse()
@@ -121,12 +121,16 @@ func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 			}
 		})
 		ui.Divider(c)
-		// Body 视图的工具行：JSON/Text 切换 + JSONPath 过滤。
+		// Body 视图的工具行：原始/格式化/Hex 切换 + JSONPath 过滤（Hex 字节视图不需要 JSONPath）。
 		if a.debugView == 0 {
 			ui.Row(c).Padding(6, 12).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Segmented(c, &a.respJSONMode, "Text", "JSON")
-				ui.Text(c, "JSONPath").FontSize(10).TextColor(t.TextMuted)
-				ui.TextInput(c, &a.respJSONPath).Placeholder("如 data.token（留空全部）").Width(200)
+				ui.Segmented(c, &a.respBodyMode, "原始", "格式化", "Hex")
+				if a.respBodyMode != 2 {
+					ui.Text(c, "JSONPath").FontSize(10).TextColor(t.TextMuted)
+					ui.TextInput(c, &a.respJSONPath).Placeholder("如 data.token（留空全部）").Width(200)
+				} else {
+					ui.Text(c, "十六进制转储：偏移 | 字节(16/行) | ASCII；不可打印字节显示为 .").FontSize(10).TextColor(t.TextMuted)
+				}
 			})
 		}
 		ui.Scroll(c).Grow(1).Padding(10, 12, 40, 12).Children(func() {
@@ -136,6 +140,14 @@ func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 			}
 			if a.debugView == 3 {
 				a.testResultView(c, t)
+				return
+			}
+			if a.debugView == 5 {
+				if a.debugResult == nil || !a.debugResult.OK {
+					ui.Text(c, "发送一次 HTTP 请求后查看分段耗时。").FontSize(11).TextColor(t.TextMuted)
+					return
+				}
+				a.debugTimingView(c, t, a.debugResult)
 				return
 			}
 			if a.debugSending || a.debugResult == nil {

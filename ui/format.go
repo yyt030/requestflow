@@ -9,15 +9,16 @@ import (
 	"unicode/utf8"
 )
 
-// FormatContent 尝试识别文本类型并美化，返回 (格式化结果, 类型名, 是否发生变化)。
+// FormatContent 尝试自动识别文本类型并美化，返回 (格式化结果, 类型名, 是否发生变化)。
 // 支持：
 //   - JSON：用 json.Indent 两空格缩进
-//   - XML/HTML 片段：用 xml.Decoder token 流重新缩进
+//   - HTML：用 x/net/html 容错 tokenizer 缩进，保留 DOCTYPE/属性/实体原样
+//   - XML：用 xml.Decoder token 流重新缩进
 //   - 键值对文本（每行 key=value / key: value）：对齐分隔符便于阅读
 //
 // 无法识别或已格式化时，返回原文，changed=false。
 //
-// 用于编辑区的「格式化」按钮，与调试响应区已有的美化能力保持一致的体验。
+// 用于编辑区的「格式化」按钮与响应区的「格式化」模式，二者能力一致。
 func FormatContent(s string) (string, string, bool) {
 	trimmed := strings.TrimSpace(s)
 	if trimmed == "" {
@@ -34,7 +35,14 @@ func FormatContent(s string) (string, string, bool) {
 		return s, "JSON", false
 	}
 
-	// 2) XML / HTML（含根元素或片段）
+	// 2) HTML（完整页面或片段）：容错 tokenizer，优先于严格 XML 识别。
+	if looksLikeHTML(trimmed) {
+		if out, ok := indentHTML(trimmed); ok && out != s {
+			return out, "HTML", true
+		}
+	}
+
+	// 3) XML（严格标签结构）
 	if out, ok := indentXML(trimmed); ok && out != s {
 		return out, "XML", true
 	}
