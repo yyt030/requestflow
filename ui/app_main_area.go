@@ -33,8 +33,7 @@ func (a *App) mainArea(c *ui.Context, t *ui.Theme) {
 				a.editor(c, t)
 			}
 		})
-		// 状态栏。
-		a.statusBar(c, t)
+		// 状态栏由 view() 统一放在工作区下方，避免覆盖响应内容末行。
 	})
 }
 
@@ -46,6 +45,10 @@ func (a *App) workTabBar(c *ui.Context, t *ui.Theme) {
 		a.activeWork = len(a.workTabs) - 1
 	}
 
+	// 关闭/排序延后到循环外执行：immediate-mode 下遍历时当场增删切片会让下一帧索引错位，
+	// 甚至 panic（与列表删除同一类问题）。循环内只记录意图，遍历结束后统一处理。
+	closeIdx := -1
+	moveIdx, moveDir := -1, 0
 	ui.Row(c).Padding(6, 8, 4, 8).Gap(4).AlignItems(ui.Center).Children(func() {
 		for i := range a.workTabs {
 			i := i
@@ -61,7 +64,7 @@ func (a *App) workTabBar(c *ui.Context, t *ui.Theme) {
 			chip.Children(func() {
 				// 拖拽手柄（点击左移/右移实现排序，视觉上等价拖动排序）。
 				if treeTextButton(c, t, tab.id+"-l", "‹", "左移标签", t.TextMuted, 14).Clicked() {
-					a.moveWorkTab(i, -1)
+					moveIdx, moveDir = i, -1
 				}
 				col := t.Text
 				if active {
@@ -69,10 +72,10 @@ func (a *App) workTabBar(c *ui.Context, t *ui.Theme) {
 				}
 				ui.Text(c, tab.label).FontSize(11).Bold().TextColor(col).SingleLine()
 				if treeTextButton(c, t, tab.id+"-r", "›", "右移标签", t.TextMuted, 14).Clicked() {
-					a.moveWorkTab(i, 1)
+					moveIdx, moveDir = i, 1
 				}
 				if treeTextButton(c, t, tab.id+"-x", "✕", "关闭标签", t.TextMuted, 14).Clicked() {
-					a.closeWorkTab(i)
+					closeIdx = i
 				}
 			})
 			if chip.Clicked() {
@@ -93,6 +96,13 @@ func (a *App) workTabBar(c *ui.Context, t *ui.Theme) {
 			a.mainTab = 1
 		}
 	})
+	// 遍历结束后统一执行结构变更，避免 immediate-mode 下索引错位。
+	if moveIdx >= 0 {
+		a.moveWorkTab(moveIdx, moveDir)
+	}
+	if closeIdx >= 0 {
+		a.closeWorkTab(closeIdx)
+	}
 }
 
 // moveWorkTab 左/右移动标签实现排序。
@@ -111,6 +121,13 @@ func (a *App) closeWorkTab(i int) {
 		return
 	}
 	a.workTabs = append(a.workTabs[:i], a.workTabs[i+1:]...)
+	// 关闭位置在激活标签之前：激活索引需随之前移；否则仅做越界兜底。
+	if i < a.activeWork {
+		a.activeWork--
+	}
+	if a.activeWork < 0 {
+		a.activeWork = 0
+	}
 	if a.activeWork >= len(a.workTabs) {
 		a.activeWork = len(a.workTabs) - 1
 	}

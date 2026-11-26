@@ -16,19 +16,19 @@ func (a *App) newScenario() {
 	a.templateIndex = 0
 }
 
-// applyTemplate 载入选中的场景模板并关闭向导。
-
-// applyTemplate 载入选中的场景模板并关闭向导。
+// applyTemplate 载入选中的场景模板、落盘到工作区并关闭向导，
+// 保证工具栏「新建」入口选模板后侧栏同样出现可展开的场景文件夹节点。
 func (a *App) applyTemplate(tpl ScenarioTemplate) {
 	a.scenario = tpl.Build()
-	a.filePath = ""
 	a.selectedStep = -1
 	a.mainTab = 0
 	a.adding = false
 	a.resetResult()
 	a.showTemplateWizard = false
-	a.refreshTabBaseline()
-	a.log("已从模板新建场景：" + tpl.Name)
+	path := a.persistNewScenario(a.scenario.Name)
+	if path != "" {
+		a.log("已从模板新建场景：" + a.scenario.Name + " → " + path)
+	}
 }
 
 // resetResult 清空上一次运行的可视化结果状态。

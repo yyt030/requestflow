@@ -188,28 +188,24 @@ func (a *App) workspaceNewModal(c *ui.Context, t *ui.Theme) {
 }
 
 // createWorkspaceScene 真正创建场景文件并切换。
+// 即使尚未设置工作区，也会自动创建默认工作区目录，确保新建必定生效并在侧栏出现文件夹节点。
 func (a *App) createWorkspaceScene() {
 	name := strings.TrimSpace(a.workspace.newBuf)
-	if name == "" || a.workspace.dir == "" {
-		return
-	}
-	path := filepath.Join(a.workspace.dir, safeFileName(name)+".json")
-	if _, err := os.Stat(path); err == nil {
-		mygo.Dialog.Error("创建失败", "同名场景文件已存在: "+path)
+	if name == "" {
 		return
 	}
 	if a.filePath != "" {
 		a.saveTo(a.filePath)
 	}
-	sc := model.NewScenario(name)
-	a.scenario = sc
-	a.filePath = path
+	a.scenario = model.NewScenario(name)
 	a.selectedStep = -1
 	a.resetResult()
-	a.saveTo(path)
-	a.scanWorkspace()
+	path := a.persistNewScenario(name)
+	if path == "" {
+		return
+	}
 	a.workspace.newOpen = false
-	a.log("已新建场景: " + name)
+	a.log("已新建场景: " + name + " → " + path)
 }
 
 // scenarioNameFromFile 从文件名派生场景显示名（去掉 .json 扩展名）。

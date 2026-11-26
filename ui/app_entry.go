@@ -52,6 +52,7 @@ func Run() {
 		tabDragFrom:      -1,
 		ctxMenuOpens:     map[string]*bool{},
 		respBodyMode:     1,
+		splitJSONPath:    50,
 	}
 	// 请求字段内联在步骤中，是唯一真相源。
 	app.refreshDebugTabBaseline() // 记录初始调试请求配置为基线
@@ -88,6 +89,8 @@ func (a *App) view(c *ui.Context) {
 		ui.Split(c, &a.splitSide, func() { a.sidebar(c, t) }, func() {
 			a.mainArea(c, t)
 		}).Grow(1)
+		// 状态栏占据工作区下方的独立一行，不再浮动覆盖响应内容末行。
+		a.statusBar(c, t)
 		// 新建场景向导：以 Modal 覆盖窗口，选择模板或空白场景。
 		ui.Modal(c, &a.showTemplateWizard, func() {
 			a.templateWizard(c, t)

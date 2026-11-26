@@ -72,13 +72,29 @@ func TestHexDumpEmptyAndLimit(t *testing.T) {
 	}
 }
 
-// TestResponseBodyTextJSONPath 验证 JSONPath 在两种模式下的行为：
+// TestResponseBodyTextNotAffectedByJSONPath 验证核心需求：JSONPath 分屏展示时，
+// 完整响应体（responseBodyText）绝不被 JSONPath 改动，仍可对照原文调试。
+func TestResponseBodyTextNotAffectedByJSONPath(t *testing.T) {
+	body := `{"code":0,"data":{"token":"abc","name":"rf"}}`
+	for _, mode := range []int{0, 1} {
+		a := &App{respBodyMode: mode, respJSONPath: "data.token"}
+		got, errMsg := a.responseBodyText(&engine.DebugResult{Body: body})
+		if errMsg != "" {
+			t.Fatal(errMsg)
+		}
+		if !strings.Contains(got, "code") || !strings.Contains(got, "data") {
+			t.Fatalf("mode=%d 完整响应体不应被 JSONPath 过滤: %q", mode, got)
+		}
+	}
+}
+
+// TestResponseJSONPathText 验证分屏右侧的 JSONPath 提取结果：
 // 原始模式返回节点原文，格式化模式返回美化节点，且都支持关键字过滤。
-func TestResponseBodyTextJSONPath(t *testing.T) {
+func TestResponseJSONPathText(t *testing.T) {
 	body := `{"code":0,"data":{"token":"abc","name":"rf"}}`
 
 	a := &App{respBodyMode: 0, respJSONPath: "data"}
-	got, errMsg := a.responseBodyText(&engine.DebugResult{Body: body})
+	got, errMsg := a.responseJSONPathText(&engine.DebugResult{Body: body})
 	if errMsg != "" {
 		t.Fatal(errMsg)
 	}
@@ -87,7 +103,7 @@ func TestResponseBodyTextJSONPath(t *testing.T) {
 	}
 
 	a.respBodyMode = 1
-	got, errMsg = a.responseBodyText(&engine.DebugResult{Body: body})
+	got, errMsg = a.responseJSONPathText(&engine.DebugResult{Body: body})
 	if errMsg != "" {
 		t.Fatal(errMsg)
 	}
@@ -96,13 +112,13 @@ func TestResponseBodyTextJSONPath(t *testing.T) {
 	}
 }
 
-// TestResponseBodyTextErrors 验证非法 JSON / 未匹配路径返回错误提示而非正文。
-func TestResponseBodyTextErrors(t *testing.T) {
+// TestResponseJSONPathTextErrors 验证非法 JSON / 未匹配路径返回错误提示而非正文。
+func TestResponseJSONPathTextErrors(t *testing.T) {
 	a := &App{respBodyMode: 1, respJSONPath: "data.token"}
-	if _, errMsg := a.responseBodyText(&engine.DebugResult{Body: "not json"}); errMsg == "" {
+	if _, errMsg := a.responseJSONPathText(&engine.DebugResult{Body: "not json"}); errMsg == "" {
 		t.Fatal("非 JSON 响应 + JSONPath 应返回错误提示")
 	}
-	if _, errMsg := a.responseBodyText(&engine.DebugResult{Body: `{"data":{}}`}); errMsg == "" {
+	if _, errMsg := a.responseJSONPathText(&engine.DebugResult{Body: `{"data":{}}`}); errMsg == "" {
 		t.Fatal("JSONPath 未匹配应返回错误提示")
 	}
 }

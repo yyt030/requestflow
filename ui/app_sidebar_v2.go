@@ -95,7 +95,7 @@ func (a *App) sceneTreeFolder(c *ui.Context, t *ui.Theme, path string) {
 	}
 	open := a.treeFlag(a.sceneExpanded, key, isCurrent)
 	steps := a.sceneSteps(path)
-	a.treeFolderRow(c, t, "tree-scene-"+key, &open, iconFile, brandOrange, func() {
+	a.treeFolderRow(c, t, "tree-scene-"+key, &open, iconFolder, brandOrange, func() {
 		nb := ui.Text(c, name).FontSize(11).SingleLine()
 		if isCurrent {
 			nb.Bold().TextColor(t.Accent)

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/transfer"
@@ -92,8 +93,11 @@ func (a *App) debugRequestArea(c *ui.Context, t *ui.Theme) {
 // debugResponseArea Postman 风格响应区：状态/耗时/大小概览 + 分段标签。
 func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Fill().Children(func() {
-		// 指标行：状态码、耗时、大小、过滤框。
-		ui.Row(c).Padding(8, 12).Gap(10).AlignItems(ui.Center).Children(func() {
+		// 响应概览行：分段标签 + 状态码/耗时/大小 + 过滤框 + 复制，全部同一行。
+		// 固定高度，避免切换子标签时内容区高度跳变。
+		ui.Row(c).Padding(6, 12).Gap(10).AlignItems(ui.Center).Height(40).Children(func() {
+			ui.Segmented(c, &a.debugView, "Body", "Headers", "Cookies", "Test", "代码", "耗时")
+			ui.Box(c).Width(1).Height(18).Background(t.Border.Mix(t.Surface, 0.2))
 			if a.debugResult != nil && a.debugResult.OK {
 				statusColor := t.Success
 				if a.debugResult.StatusCode >= 400 {
@@ -106,65 +110,77 @@ func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 			ui.Spacer(c)
 			// 过滤输入框：对当前视图内容实时过滤。
 			ui.SearchField(c, &a.respFilter).Placeholder("过滤响应…").Width(160)
-		})
-		// 子标签行：Body / Headers / Cookies / Test / 代码 / 耗时 + 复制。
-		ui.Row(c).Padding(0, 12, 8, 12).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Segmented(c, &a.debugView, "Body", "Headers", "Cookies", "Test", "代码", "耗时")
 			if a.debugResult != nil && a.debugResult.OK && a.debugView <= 2 {
 				if ui.Button(c, "⧉ 复制").Tooltip("复制当前标签内容").Clicked() {
 					a.copyDebugResponse()
 				}
 			}
-			ui.Spacer(c)
 			if a.debugSending {
 				ui.Text(c, "发送中…").FontSize(11).TextColor(t.Accent)
 			}
 		})
 		ui.Divider(c)
-		// Body 视图的工具行：原始/格式化/Hex 切换 + JSONPath 过滤（Hex 字节视图不需要 JSONPath）。
-		if a.debugView == 0 {
-			ui.Row(c).Padding(6, 12).Gap(8).AlignItems(ui.Center).Children(func() {
+		// 工具行固定占位：所有子标签都渲染同一高度，避免 Body/Headers 切换时
+		// 内容区高度跳变。Body 时放原始/格式化/Hex + JSONPath，其它标签放提示。
+		ui.Row(c).Padding(6, 12).Height(34).Gap(8).AlignItems(ui.Center).Children(func() {
+			if a.debugView == 0 {
 				ui.Segmented(c, &a.respBodyMode, "原始", "格式化", "Hex")
 				if a.respBodyMode != 2 {
 					ui.Text(c, "JSONPath").FontSize(10).TextColor(t.TextMuted)
-					ui.TextInput(c, &a.respJSONPath).Placeholder("如 data.token（留空全部）").Width(200)
+					ui.TextInput(c, &a.respJSONPath).Placeholder("输入路径，右侧实时展示结果，原文本不变").Width(240)
 				} else {
 					ui.Text(c, "十六进制转储：偏移 | 字节(16/行) | ASCII；不可打印字节显示为 .").FontSize(10).TextColor(t.TextMuted)
 				}
-			})
+			} else {
+				ui.Text(c, "提示：切回 Body 可使用 原始 / 格式化 / Hex 与 JSONPath 分屏对照").FontSize(10).TextColor(t.TextMuted)
+			}
+		})
+		// JSONPath 分屏需要独立的宽度测量，不能嵌在 Scroll 内部（否则左右栏宽度失衡）。
+		// 因此：Body + 有路径时直接用 Split（两栏各自 Scroll），其余情况用单一 Scroll。
+		path := strings.TrimSpace(a.respJSONPath)
+		splitMode := a.debugView == 0 && path != "" && a.respBodyMode != 2 &&
+			!a.debugSending && a.debugResult != nil && a.debugResult.OK
+		if splitMode {
+			a.bodyJSONPathSplit(c, t, a.debugResult)
+			return
 		}
-		ui.Scroll(c).Grow(1).Padding(10, 12, 40, 12).Children(func() {
-			if a.debugView == 4 {
-				a.codeSnippetView(c, t)
-				return
-			}
-			if a.debugView == 3 {
-				a.testResultView(c, t)
-				return
-			}
-			if a.debugView == 5 {
-				if a.debugResult == nil || !a.debugResult.OK {
-					ui.Text(c, "发送一次 HTTP 请求后查看分段耗时。").FontSize(11).TextColor(t.TextMuted)
-					return
-				}
-				a.debugTimingView(c, t, a.debugResult)
-				return
-			}
-			if a.debugSending || a.debugResult == nil {
-				ui.Column(c).Fill().Center().Gap(6).Children(func() {
-					ui.Icon(c, iconSend).Size(24, 24).TextColor(t.TextMuted)
-					ui.Text(c, "配置好请求后点击【发送】，响应将显示在这里。").FontSize(11).TextColor(t.TextMuted)
-				})
-				return
-			}
-			res := a.debugResult
-			if !res.OK {
-				ui.Text(c, "错误: "+res.Err).FontSize(11).TextColor(t.Danger)
-				return
-			}
-			a.responseBodyView(c, t, res)
+		ui.Scroll(c).Grow(1).Padding(10, 12, 20, 12).Children(func() {
+			a.responseContent(c, t)
 		})
 	})
+}
+
+// responseContent 在单一 Scroll 内按当前子标签分发响应内容。
+func (a *App) responseContent(c *ui.Context, t *ui.Theme) {
+	if a.debugView == 4 {
+		a.codeSnippetView(c, t)
+		return
+	}
+	if a.debugView == 3 {
+		a.testResultView(c, t)
+		return
+	}
+	if a.debugView == 5 {
+		if a.debugResult == nil || !a.debugResult.OK {
+			ui.Text(c, "发送一次 HTTP 请求后查看分段耗时。").FontSize(11).TextColor(t.TextMuted)
+			return
+		}
+		a.debugTimingView(c, t, a.debugResult)
+		return
+	}
+	if a.debugSending || a.debugResult == nil {
+		ui.Column(c).Fill().Center().Gap(6).Children(func() {
+			ui.Icon(c, iconSend).Size(24, 24).TextColor(t.TextMuted)
+			ui.Text(c, "配置好请求后点击【发送】，响应将显示在这里。").FontSize(11).TextColor(t.TextMuted)
+		})
+		return
+	}
+	res := a.debugResult
+	if !res.OK {
+		ui.Text(c, "错误: "+res.Err).FontSize(11).TextColor(t.Danger)
+		return
+	}
+	a.responseBodyView(c, t, res)
 }
 
 // testResultView 测试结果视图：展示最近响应的断言摘要。

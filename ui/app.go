@@ -199,9 +199,10 @@ type App struct {
 	// 顶栏环境选择弹层开关。
 	headerEnvOpen bool
 	// 响应区：原始/格式化/Hex 切换、过滤、JSONPath 过滤。
-	respBodyMode int // Segmented 索引：0=原始(Raw) 服务端原文，1=格式化(Pretty) 自动美化，2=Hex 十六进制转储
-	respFilter   string
-	respJSONPath string
+	respBodyMode  int // Segmented 索引：0=原始(Raw) 服务端原文，1=格式化(Pretty) 自动美化，2=Hex 十六进制转储
+	respFilter    string
+	respJSONPath  string
+	splitJSONPath float32 // Body 视图「原始响应体 / JSONPath 结果」左右分屏百分比（默认 50/50）
 }
 
 // workTab 中央工作区的一个标签页。
