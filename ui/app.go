@@ -126,6 +126,11 @@ type App struct {
 	importHeight  float32
 	gqlVarsHeight float32
 
+	// 请求编辑区大文本框高度（Params / Headers / 脚本步骤 Code，可拖拽调整）
+	reqQueryHeight   float32
+	reqHeadersHeight float32
+	scriptCodeHeight float32
+
 	// 环境变量分层：当前选中的环境名 + 新增环境变量缓冲
 	activeEnvBuf string
 	newEnvName   string

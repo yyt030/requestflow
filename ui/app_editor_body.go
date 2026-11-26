@@ -28,7 +28,7 @@ var authTypes = []string{"none", "bearer", "basic", "apikey", "oauth2"}
 
 // bodyEditor 渲染请求体类型选择 + 对应编辑控件。 pointers 让步骤编辑器与调试面板复用。
 func bodyEditor(c *ui.Context, t *ui.Theme, bodyType *string, body *string, form *[]model.FormField,
-	gqlQuery *string, gqlVars *string, height *float32, placeholder string, fmtMsg *string) {
+	gqlQuery *string, gqlVars *string, height *float32, gqlVarsHeight *float32, placeholder string, fmtMsg *string) {
 	bt := *bodyType
 	if bt == "" {
 		bt = "raw"
@@ -54,6 +54,7 @@ func bodyEditor(c *ui.Context, t *ui.Theme, bodyType *string, body *string, form
 	case "form-data", "urlencoded":
 		fieldHint(c, t, "逐行添加字段；类型选 file 时值为本地文件路径（form-data 支持上传）。")
 		fields := *form
+		removeIdx := -1 // 删除延后到循环结束，避免遍历中修改切片导致索引越界闪退
 		for i := range fields {
 			f := &fields[i]
 			idx := i
@@ -71,19 +72,22 @@ func bodyEditor(c *ui.Context, t *ui.Theme, bodyType *string, body *string, form
 				}
 				ui.TextInput(c, &f.Value).Placeholder("值或文件路径").Grow(1)
 				if ui.Button(c.Key("delf"), "×").Width(26).Clicked() {
-					*form = append(fields[:idx], fields[idx+1:]...)
+					removeIdx = idx
 				}
 			})
 		}
+		if removeIdx >= 0 && removeIdx < len(fields) {
+			*form = append(fields[:removeIdx], fields[removeIdx+1:]...)
+		}
 		if ui.Button(c, "+ 添加字段").Clicked() {
-			*form = append(fields, model.FormField{Type: "text"})
+			*form = append(*form, model.FormField{Type: "text"})
 		}
 	case "graphql":
 		fieldHint(c, t, "Query 填写 GraphQL 查询；Variables 为 JSON 对象（可留空 {}）。")
 		ui.Text(c, "Query").FontSize(10).TextColor(t.TextMuted)
 		resizableTextArea(c, t, gqlQuery, height, "query { me { id } }", 40, 600)
 		ui.Text(c, "Variables (JSON)").FontSize(10).TextColor(t.TextMuted)
-		ui.TextArea(c, gqlVars).Placeholder("{}").Height(80)
+		resizableTextArea(c, t, gqlVars, gqlVarsHeight, "{}", 40, 600)
 	}
 }
 

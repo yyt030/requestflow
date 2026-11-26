@@ -19,6 +19,7 @@ func (a *App) editorExtract(c *ui.Context, t *ui.Theme, step *model.Step) {
 		}
 	})
 	fieldHint(c, t, "来源选 body/header/cookie；jsonpath 填 data.token，regex 填正则；css 用选择器多元素提数组；cssRows 用「行选择器+行内子字段」一次提取对象数组（标题+链接配对零错位）。expectMin 可防反爬空页。")
+	removeIdx := -1 // 删除延后到循环结束，避免遍历中修改切片导致索引越界闪退
 	for i := range step.Extract {
 		ex := &step.Extract[i]
 		idx := i
@@ -26,7 +27,7 @@ func (a *App) editorExtract(c *ui.Context, t *ui.Theme, step *model.Step) {
 			ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
 				ui.TextInput(c, &ex.Name).Placeholder("变量名，如 token").Grow(1).Label("变量名")
 				if ui.Button(c.Key("del"), "移除").Clicked() {
-					step.Extract = append(step.Extract[:idx], step.Extract[idx+1:]...)
+					removeIdx = idx
 				}
 			})
 			// 来源 / 方式 / 默认值 都是短控件，同一行排列。
@@ -73,6 +74,9 @@ func (a *App) editorExtract(c *ui.Context, t *ui.Theme, step *model.Step) {
 			}
 		})
 	}
+	if removeIdx >= 0 && removeIdx < len(step.Extract) {
+		step.Extract = append(step.Extract[:removeIdx], step.Extract[removeIdx+1:]...)
+	}
 	// 实时预览：复用最近调试响应，自动展示提取结果（含默认例子）。
 	a.extractPreview(c, t, step)
 }
@@ -90,6 +94,7 @@ func (a *App) editorCSSFields(c *ui.Context, t *ui.Theme, ex *model.Extract) {
 			}
 		})
 		fieldHint(c, t, "字段名=输出对象的 key；行内选择器留空表示取行元素自身；attr 需填属性名。")
+		removeFieldIdx := -1 // 删除延后到循环结束
 		for j := range ex.CssFields {
 			f := &ex.CssFields[j]
 			fj := j
@@ -106,9 +111,12 @@ func (a *App) editorCSSFields(c *ui.Context, t *ui.Theme, ex *model.Extract) {
 				}
 				ui.Checkbox(c, &f.Resolve, "URL")
 				if ui.Button(c.Key("del"), "×").Width(26).Clicked() {
-					ex.CssFields = append(ex.CssFields[:fj], ex.CssFields[fj+1:]...)
+					removeFieldIdx = fj
 				}
 			})
+		}
+		if removeFieldIdx >= 0 && removeFieldIdx < len(ex.CssFields) {
+			ex.CssFields = append(ex.CssFields[:removeFieldIdx], ex.CssFields[removeFieldIdx+1:]...)
 		}
 	})
 }
@@ -122,6 +130,7 @@ func (a *App) editorAssertList(c *ui.Context, t *ui.Theme, step *model.Step) {
 		}
 	})
 	fieldHint(c, t, "校验响应是否符合预期：如 status eq 200、jsonpath 变量 contains 文本；失败即中止（除非勾选失败后继续）。")
+	removeIdx := -1 // 删除延后到循环结束，避免遍历中修改切片导致索引越界闪退
 	for i := range step.Assert {
 		as := &step.Assert[i]
 		idx := i
@@ -129,7 +138,7 @@ func (a *App) editorAssertList(c *ui.Context, t *ui.Theme, step *model.Step) {
 			ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
 				ui.TextInput(c, &as.Name).Placeholder("断言说明").Grow(1).Label("名称")
 				if ui.Button(c.Key("del"), "移除").Clicked() {
-					step.Assert = append(step.Assert[:idx], step.Assert[idx+1:]...)
+					removeIdx = idx
 				}
 			})
 			// 来源 / 操作 同一行。
@@ -145,6 +154,9 @@ func (a *App) editorAssertList(c *ui.Context, t *ui.Theme, step *model.Step) {
 				ui.TextInput(c, &as.Value).Placeholder("期望值").Label("期望值").Grow(1)
 			})
 		})
+	}
+	if removeIdx >= 0 && removeIdx < len(step.Assert) {
+		step.Assert = append(step.Assert[:removeIdx], step.Assert[removeIdx+1:]...)
 	}
 }
 

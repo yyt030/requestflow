@@ -77,7 +77,7 @@ func (a *App) debugRequestArea(c *ui.Context, t *ui.Theme) {
 				resizableTextArea(c, t, &a.debugHeaders, &a.headersHeight, "Authorization: Bearer {{token}}", 40, 600)
 			case 2: // Body
 				bodyEditor(c, t, &a.debugBodyType, &a.debugBody, &a.debugFormData,
-					&a.debugGQLQuery, &a.debugGQLVars, &a.bodyHeight, `{"key": "{{value}}"}`, &a.debugBodyFmtMsg)
+					&a.debugGQLQuery, &a.debugGQLVars, &a.bodyHeight, &a.gqlVarsHeight, `{"key": "{{value}}"}`, &a.debugBodyFmtMsg)
 			case 3: // Authorization
 				authEditor(c, t, &a.debugAuthType, &a.debugAuthToken, &a.debugUser, &a.debugPass,
 					&a.debugKeyName, &a.debugKeyValue, &a.debugKeyIn,

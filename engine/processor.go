@@ -67,7 +67,7 @@ func runProcess(ctx *Context, step model.Step) error {
 		ctx.Set(to, acc)
 		return nil
 
-	case "flatten": // 将多个数组变量合并为一个
+	case "flatten": // 将多个数组变量合并为一个，并递归展平嵌套数组（如循环 append 页数组后的 [[...],[...]]）
 		names := strings.Split(get("from"), ",")
 		out := get("to")
 		if out == "" {
@@ -75,9 +75,13 @@ func runProcess(ctx *Context, step model.Step) error {
 		}
 		var merged []interface{}
 		for _, n := range names {
-			list, ok := toSlice(ctx.Get(strings.TrimSpace(n)))
+			name := strings.TrimSpace(n)
+			if name == "" {
+				continue
+			}
+			list, ok := toSlice(ctx.resolveArg(name))
 			if ok {
-				merged = append(merged, list...)
+				merged = append(merged, flattenDeep(list)...)
 			}
 		}
 		ctx.Set(out, merged)

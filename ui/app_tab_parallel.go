@@ -50,6 +50,7 @@ func (a *App) parallelMergeCfgView(c *ui.Context, t *ui.Theme, p *model.Parallel
 
 func (a *App) parallelTasksView(c *ui.Context, t *ui.Theme, step *model.Step, p *model.Parallel) {
 	fieldHint(c, t, "每个子任务在独立变量沙箱中并行执行；产物按「汇合配置」设定的方式合并。")
+	removeIdx := -1 // 删除延后到循环结束，避免遍历中修改切片导致索引越界闪退
 	for i := range p.Tasks {
 		task := &p.Tasks[i]
 		idx := i
@@ -58,7 +59,7 @@ func (a *App) parallelTasksView(c *ui.Context, t *ui.Theme, step *model.Step, p 
 				ui.Text(c, fmt.Sprintf("任务 %d", idx+1)).FontSize(11).Bold().TextColor(t.Accent)
 				ui.TextInput(c, &task.Name).Placeholder("任务名（object 模式作为 key）").Grow(1)
 				if ui.Button(c.Key("del"), "移除").Clicked() {
-					p.Tasks = append(p.Tasks[:idx], p.Tasks[idx+1:]...)
+					removeIdx = idx
 				}
 			})
 			ui.Row(c).Gap(8).Children(func() {
@@ -68,6 +69,9 @@ func (a *App) parallelTasksView(c *ui.Context, t *ui.Theme, step *model.Step, p 
 			ui.Text(c, "子任务步骤（在独立变量沙箱中并行执行）").FontSize(10).TextColor(t.TextMuted)
 			a.editorBranchChildren(c, t, step, &task.Steps, fmt.Sprintf("pt%d", idx))
 		})
+	}
+	if removeIdx >= 0 && removeIdx < len(p.Tasks) {
+		p.Tasks = append(p.Tasks[:removeIdx], p.Tasks[removeIdx+1:]...)
 	}
 	if ui.Button(c, "+ 添加子任务").Clicked() {
 		p.Tasks = append(p.Tasks, model.ParallelTask{Name: fmt.Sprintf("task %d", len(p.Tasks)+1)})

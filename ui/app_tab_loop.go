@@ -101,6 +101,7 @@ func (a *App) loopBodyView(c *ui.Context, t *ui.Theme, step *model.Step) {
 			step.Children = append(step.Children, s)
 		}
 	})
+	removeIdx := -1 // 删除延后到循环结束，避免遍历中修改切片导致索引越界闪退
 	for i := range step.Children {
 		child := &step.Children[i]
 		idx := i
@@ -108,7 +109,7 @@ func (a *App) loopBodyView(c *ui.Context, t *ui.Theme, step *model.Step) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, a.stepLabel(*child)).Grow(1)
 				if ui.Button(c, "移除").Clicked() {
-					step.Children = append(step.Children[:idx], step.Children[idx+1:]...)
+					removeIdx = idx
 				}
 			})
 			ui.TextInput(c, &child.Name).Label("名称")
@@ -129,5 +130,8 @@ func (a *App) loopBodyView(c *ui.Context, t *ui.Theme, step *model.Step) {
 				a.renderProcessForm(c, t, child, a.processFormRawOpen(child), collectVarNames(a.scenario))
 			}
 		})
+	}
+	if removeIdx >= 0 && removeIdx < len(step.Children) {
+		step.Children = append(step.Children[:removeIdx], step.Children[removeIdx+1:]...)
 	}
 }

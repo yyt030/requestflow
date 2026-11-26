@@ -44,6 +44,7 @@ func (a *App) branchCondView(c *ui.Context, t *ui.Theme, br *model.Branch) {
 	})
 
 	ops := []string{"大于", "大于等于", "小于", "小于等于", "等于", "不等于", "包含", "不包含", "存在", "为空", "为真"}
+	removeIdx := -1 // 删除延后到循环结束，避免遍历中修改切片导致索引越界闪退
 	for i := range br.Conditions {
 		cond := &br.Conditions[i]
 		idx := i
@@ -52,7 +53,7 @@ func (a *App) branchCondView(c *ui.Context, t *ui.Theme, br *model.Branch) {
 				ui.Text(c, fmt.Sprintf("条件 %d", idx+1)).FontSize(10).TextColor(t.TextMuted).Width(48)
 				ui.Spacer(c)
 				if ui.Button(c.Key("del"), "移除").Clicked() {
-					br.Conditions = append(br.Conditions[:idx], br.Conditions[idx+1:]...)
+					removeIdx = idx
 				}
 			})
 			ui.Row(c).Gap(6).Children(func() {
@@ -67,6 +68,9 @@ func (a *App) branchCondView(c *ui.Context, t *ui.Theme, br *model.Branch) {
 				}
 			})
 		})
+	}
+	if removeIdx >= 0 && removeIdx < len(br.Conditions) {
+		br.Conditions = append(br.Conditions[:removeIdx], br.Conditions[removeIdx+1:]...)
 	}
 	ui.Row(c).Gap(8).Children(func() {
 		if ui.Button(c, "+ 添加条件").Clicked() {
@@ -93,6 +97,7 @@ func (a *App) switchTabView(c *ui.Context, t *ui.Theme, step *model.Step, tab st
 func (a *App) switchCasesView(c *ui.Context, t *ui.Theme, step *model.Step, sw *model.Switch) {
 	fieldHint(c, t, "多分支：自上而下匹配，命中第一个 case 后执行并跳出；都不满足则执行「默认」标签里的 default。")
 	ops := []string{"大于", "大于等于", "小于", "小于等于", "等于", "不等于", "包含", "不包含", "存在", "为空", "为真"}
+	removeIdx := -1 // 删除延后到循环结束，避免遍历中修改切片导致索引越界闪退
 	for i := range sw.Cases {
 		cs := &sw.Cases[i]
 		idx := i
@@ -107,7 +112,7 @@ func (a *App) switchCasesView(c *ui.Context, t *ui.Theme, step *model.Step, sw *
 					sw.Cases[idx], sw.Cases[idx+1] = sw.Cases[idx+1], sw.Cases[idx]
 				}
 				if ui.Button(c.Key("del"), "移除").Clicked() {
-					sw.Cases = append(sw.Cases[:idx], sw.Cases[idx+1:]...)
+					removeIdx = idx
 				}
 			})
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -138,6 +143,9 @@ func (a *App) switchCasesView(c *ui.Context, t *ui.Theme, step *model.Step, sw *
 			ui.Text(c, "命中后执行").FontSize(10).TextColor(t.TextMuted)
 			a.editorBranchChildren(c, t, step, &cs.Steps, fmt.Sprintf("sw%d", idx))
 		})
+	}
+	if removeIdx >= 0 && removeIdx < len(sw.Cases) {
+		sw.Cases = append(sw.Cases[:removeIdx], sw.Cases[removeIdx+1:]...)
 	}
 	if ui.Button(c, "+ 添加 case").Clicked() {
 		sw.Cases = append(sw.Cases, model.SwitchCase{Name: fmt.Sprintf("case %d", len(sw.Cases)+1), Logic: "and"})

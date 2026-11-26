@@ -70,17 +70,16 @@ func fieldHint(c *ui.Context, t *ui.Theme, text string) {
 // 手柄是文本框右下角的标准斜线小三角（同浏览器 textarea 的 resize handle），
 // 鼠标悬停显示上下调整光标，上下拖动即改变高度。
 // height 指向 App 中保存该文本框高度的变量；min/max 限制避免缩到不可用或撑满屏幕。
-
-// resizableTextArea 渲染一个可拖拽调整高度的多行文本框。
-// 手柄是文本框右下角的标准斜线小三角（同浏览器 textarea 的 resize handle），
-// 鼠标悬停显示上下调整光标，上下拖动即改变高度。
-// height 指向 App 中保存该文本框高度的变量；min/max 限制避免缩到不可用或撑满屏幕。
-func resizableTextArea(c *ui.Context, t *ui.Theme, value *string, height *float32, placeholder string, min, max float32) {
+// 返回文本框内容本帧是否变化，便于调用方把临时缓冲写回 Map 等结构（旧调用可忽略返回值）。
+func resizableTextArea(c *ui.Context, t *ui.Theme, value *string, height *float32, placeholder string, min, max float32) bool {
 	*height = clampHeight(*height, min, max)
 	h := *height
+	changed := false
 	// 外层 Box 作为定位参照，手柄绝对定位到右下角、悬浮在文本框之上。
 	ui.Box(c).Children(func() {
-		ui.TextArea(c, value).Placeholder(placeholder).Height(*height)
+		if ui.TextArea(c, value).Placeholder(placeholder).Height(*height).Changed() {
+			changed = true
+		}
 		// 手柄用 currentColor 跟随文字色；命中区稍大于图标本身，便于拖动。
 		grip := ui.Box(c).Absolute().Right(1).Bottom(1).Width(20).Height(20).
 			Cursor(ui.CursorResizeNS).Center().Tooltip("拖动右下角调整高度")
@@ -91,6 +90,7 @@ func resizableTextArea(c *ui.Context, t *ui.Theme, value *string, height *float3
 			ui.Icon(c, resizeGripIcon).Size(16, 16).TextColor(t.Text.Mix(t.TextMuted, 0.35))
 		})
 	})
+	return changed
 }
 
 // formattedTextArea 在可拖拽文本框上方加一个「格式化」按钮，点击后自动美化内容

@@ -51,7 +51,7 @@ func (a *App) editorScript(c *ui.Context, t *ui.Theme, step *model.Step) {
 			ui.Text(c, a.scriptFmtMsg).FontSize(10).TextColor(t.TextMuted)
 		}
 	})
-	ui.TextArea(c, &step.Code).Height(240)
+	resizableTextArea(c, t, &step.Code, &a.scriptCodeHeight, "vars.result = 'ok';", 80, 800)
 }
 
 func (a *App) editorAssert(c *ui.Context, t *ui.Theme, step *model.Step) {

@@ -145,6 +145,29 @@ func toSlice(v interface{}) ([]interface{}, bool) {
 	return nil, false
 }
 
+// flattenDeep 递归展平嵌套数组：[[a,b],[c]] → [a,b,c]。
+// 非数组元素（含 map 行对象）原样保留，避免把表格行拆散。
+func flattenDeep(list []interface{}) []interface{} {
+	out := make([]interface{}, 0, len(list))
+	for _, item := range list {
+		switch x := item.(type) {
+		case []interface{}:
+			out = append(out, flattenDeep(x)...)
+		case []string:
+			for _, s := range x {
+				out = append(out, s)
+			}
+		case []map[string]interface{}:
+			for _, m := range x {
+				out = append(out, m)
+			}
+		default:
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
 func fieldValue(item interface{}, field string) interface{} {
 	switch x := item.(type) {
 	case map[string]interface{}:

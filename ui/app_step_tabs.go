@@ -82,20 +82,20 @@ func (a *App) requestTabView(c *ui.Context, t *ui.Theme, step *model.Step, tab s
 		ui.Text(c, "查询参数 Query").FontSize(12).Bold()
 		fieldHint(c, t, "每行 key: value，如 page: {{page}}，自动拼到 URL；支持 {{变量名}}。")
 		queryText := mapToColonString(step.Query)
-		if ui.TextArea(c, &queryText).Height(160).Changed() {
+		if resizableTextArea(c, t, &queryText, &a.reqQueryHeight, "page: {{page}}", 60, 600) {
 			step.Query = stringToMap(queryText, ":")
 		}
 	case "Headers":
 		ui.Text(c, "请求头 Headers").FontSize(12).Bold()
 		fieldHint(c, t, "每行 key: value，可直接粘贴 Chrome 复制的请求头；支持 {{变量}}。")
 		headerText := mapToColonString(step.Headers)
-		if ui.TextArea(c, &headerText).Height(160).Changed() {
+		if resizableTextArea(c, t, &headerText, &a.reqHeadersHeight, "Authorization: Bearer {{token}}", 60, 600) {
 			step.Headers = stringToMap(headerText, ":")
 		}
 	case "Body":
 		ui.Text(c, "请求体 Body").FontSize(12).Bold()
 		bodyEditor(c, t, &step.BodyType, &step.Body, &step.FormData,
-			&step.GraphQLQuery, &step.GraphQLVariables, &a.bodyHeight, `{"key": "{{value}}"}`, &a.bodyFmtMsg)
+			&step.GraphQLQuery, &step.GraphQLVariables, &a.bodyHeight, &a.gqlVarsHeight, `{"key": "{{value}}"}`, &a.bodyFmtMsg)
 	case "Auth":
 		ui.Text(c, "认证").FontSize(12).Bold()
 		authEditor(c, t, &step.AuthType, &step.AuthToken, &step.AuthUser, &step.AuthPass,

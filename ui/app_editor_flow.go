@@ -27,6 +27,7 @@ func (a *App) editorBranchChildren(c *ui.Context, t *ui.Theme, step *model.Step,
 	if len(*children) == 0 {
 		ui.Text(c, "（无子步骤）").FontSize(10).TextColor(t.TextMuted)
 	}
+	removeIdx := -1 // 删除延后到循环结束，避免遍历中修改切片导致索引越界闪退
 	for i := range *children {
 		child := &(*children)[i]
 		idx := i
@@ -34,7 +35,7 @@ func (a *App) editorBranchChildren(c *ui.Context, t *ui.Theme, step *model.Step,
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, a.stepLabel(*child)).Grow(1)
 				if ui.Button(c.Key("del"), "移除").Clicked() {
-					*children = append((*children)[:idx], (*children)[idx+1:]...)
+					removeIdx = idx
 				}
 			})
 			ui.TextInput(c, &child.Name).Label("名称")
@@ -67,5 +68,8 @@ func (a *App) editorBranchChildren(c *ui.Context, t *ui.Theme, step *model.Step,
 				a.renderProcessForm(c, t, child, a.processFormRawOpen(child), collectVarNames(a.scenario))
 			}
 		})
+	}
+	if removeIdx >= 0 && removeIdx < len(*children) {
+		*children = append((*children)[:removeIdx], (*children)[removeIdx+1:]...)
 	}
 }
