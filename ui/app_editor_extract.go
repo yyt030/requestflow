@@ -12,9 +12,11 @@ import (
 
 func (a *App) editorExtract(c *ui.Context, t *ui.Theme, step *model.Step) {
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, "提取变量").FontSize(12).Bold()
-		ui.Spacer(c)
-		if ui.Button(c, "+ 提取").Clicked() {
+		// 不能用 Spacer 把按钮推到最右：此区域位于 Scroll 内，Spacer 在不定宽上下文中
+		// 会无限伸展，把后面的 Button 挤到可视区外（实测 + 提取/+ 断言 按钮完全不可见也点不到）。
+		// 用固定宽度标题替代 Spacer，按钮紧邻标题，始终可见可点。
+		ui.Text(c, "提取变量").FontSize(12).Bold().Width(80)
+		if ui.Button(c, "+ 提取").Tooltip("新增一条提取规则").Clicked() {
 			step.Extract = append(step.Extract, model.Extract{Source: "body", Kind: "jsonpath"})
 		}
 	})
@@ -87,9 +89,9 @@ func (a *App) editorExtract(c *ui.Context, t *ui.Theme, step *model.Step) {
 func (a *App) editorCSSFields(c *ui.Context, t *ui.Theme, ex *model.Extract) {
 	ui.Column(c).Padding(0, 8, 0, 8).Gap(4).Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "行内子字段").FontSize(11).Bold().TextColor(t.TextMuted)
-			ui.Spacer(c)
-			if ui.Button(c, "+ 字段").Clicked() {
+			// 同 + 提取：Scroll 内不用 Spacer，固定宽度标题 + 紧邻按钮。
+			ui.Text(c, "行内子字段").FontSize(11).Bold().TextColor(t.TextMuted).Width(90)
+			if ui.Button(c, "+ 字段").Tooltip("新增一个行内子字段").Clicked() {
 				ex.CssFields = append(ex.CssFields, model.CSSField{CssField: "text"})
 			}
 		})
@@ -123,9 +125,9 @@ func (a *App) editorCSSFields(c *ui.Context, t *ui.Theme, ex *model.Extract) {
 
 func (a *App) editorAssertList(c *ui.Context, t *ui.Theme, step *model.Step) {
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, "断言").FontSize(12).Bold()
-		ui.Spacer(c)
-		if ui.Button(c, "+ 断言").Clicked() {
+		// 同 + 提取：Scroll 内不用 Spacer，固定宽度标题 + 紧邻按钮。
+		ui.Text(c, "断言").FontSize(12).Bold().Width(80)
+		if ui.Button(c, "+ 断言").Tooltip("新增一条断言规则").Clicked() {
 			step.Assert = append(step.Assert, model.Assert{Source: "status", Op: "eq"})
 		}
 	})

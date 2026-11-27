@@ -80,8 +80,30 @@ func (a *App) bodyKVList(c *ui.Context, t *ui.Theme, kvs []engine.KV, empty, sep
 	})
 }
 
+// filterNoopHint 检测「输入了过滤词但按行过滤无可见变化」的场景并给出提示。
+// 典型：原始模式下 JSON 是一整行，按行过滤时整行命中→整行保留，用户误以为过滤失效。
+// 格式化模式为多行、Hex 模式另计，均不提示。
+func (a *App) filterNoopHint(res *engine.DebugResult) string {
+	q := strings.TrimSpace(a.respFilter)
+	if q == "" || a.debugView != 0 || a.respBodyMode == 2 || a.respBodyMode == 1 {
+		return ""
+	}
+	base := res.Body
+	if !strings.Contains(strings.ToLower(base), strings.ToLower(q)) {
+		return "" // 未命中：内容区会显示空结果，无需提示
+	}
+	if strings.Contains(base, "\n") {
+		return "" // 多行文本，按行过滤有意义
+	}
+	return "提示：原文为单行，按行过滤会保留整行。切到「格式化」模式可逐行筛选。"
+}
+
 // bodyTextView 渲染响应体：按原始/格式化模式、JSONPath、关键字过滤计算结果。
 func (a *App) bodyTextView(c *ui.Context, t *ui.Theme, res *engine.DebugResult) {
+	if hint := a.filterNoopHint(res); hint != "" {
+		ui.Text(c, hint).FontSize(10).TextColor(t.Accent)
+		ui.Box(c).Height(4)
+	}
 	text, errMsg := a.responseBodyText(res)
 	if errMsg != "" {
 		ui.Text(c, errMsg).FontSize(11).TextColor(t.Danger)

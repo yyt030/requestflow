@@ -108,8 +108,9 @@ func (a *App) debugResponseArea(c *ui.Context, t *ui.Theme) {
 				ui.Text(c, fmt.Sprintf("%d B", a.debugResult.Size)).FontSize(11).TextColor(t.TextMuted)
 			}
 			ui.Spacer(c)
-			// 过滤输入框：对当前视图内容实时过滤。
-			ui.SearchField(c, &a.respFilter).Placeholder("过滤响应…").Width(160)
+			// 过滤输入框：对当前视图内容按行过滤；提示用户单行原文需切格式化。
+			ui.SearchField(c, &a.respFilter).Placeholder("过滤响应…").Width(160).
+				Tooltip("按行过滤：保留含关键字的行。原始模式 JSON 常为单行，切到「格式化」可逐行筛选")
 			if a.debugResult != nil && a.debugResult.OK && a.debugView <= 2 {
 				if ui.Button(c, "⧉ 复制").Tooltip("复制当前标签内容").Clicked() {
 					a.copyDebugResponse()

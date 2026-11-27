@@ -138,3 +138,34 @@ func TestResponseBodyTextFilter(t *testing.T) {
 		}
 	}
 }
+
+// TestFilterNoopHint 验证「单行原文 + 命中关键字」时给出提示，避免用户误以为过滤失效。
+func TestFilterNoopHint(t *testing.T) {
+	single := `{"token":"abc","name":"rf"}`
+	multi := "{\n  \"token\": \"abc\",\n  \"name\": \"rf\"\n}"
+	cases := []struct {
+		name   string
+		body   string
+		mode   int
+		view   int
+		filter string
+		want   bool
+	}{
+		{"单行原文命中-提示", single, 0, 0, "token", true},
+		{"多行原文命中-不提示", multi, 0, 0, "token", false},
+		{"格式化模式-不提示", single, 1, 0, "token", false},
+		{"Hex模式-不提示", single, 2, 0, "token", false},
+		{"非Body标签-不提示", single, 0, 1, "token", false},
+		{"未命中-不提示", single, 0, 0, "notexist", false},
+		{"空过滤-不提示", single, 0, 0, "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &App{respBodyMode: tc.mode, debugView: tc.view, respFilter: tc.filter}
+			hint := a.filterNoopHint(&engine.DebugResult{Body: tc.body})
+			if (hint != "") != tc.want {
+				t.Fatalf("want提示=%v, got=%q", tc.want, hint)
+			}
+		})
+	}
+}

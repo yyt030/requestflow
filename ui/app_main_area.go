@@ -86,8 +86,8 @@ func (a *App) workTabBar(c *ui.Context, t *ui.Theme) {
 				a.mainTab = 0
 			}
 		}
-		// 新建请求标签。
-		if treeTextButton(c, t, "tab-add", "＋", "新建请求标签", t.TextMuted, 22).Clicked() {
+		// 新建标签页（复制当前视图）。与侧栏的「＋ 新建请求」区分：后者才是新建步骤。
+		if treeTextButton(c, t, "tab-add", "＋", "新建标签页（复制当前步骤视图）；若要新建请求步骤请用左侧栏的 + 新建请求", t.TextMuted, 22).Clicked() {
 			a.newRequestTab()
 		}
 		ui.Spacer(c)
